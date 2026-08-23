@@ -1,0 +1,18 @@
+[Unit]
+Description=Обновление стенда «Навигатор» из GHCR
+Documentation=https://github.com/Danil-prog-coder/MAX_mini_app/blob/main/infra/deploy/README.md
+# Без докера скрипт бессмыслен, а без сети — не дойдёт до реестра.
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/navigator/update.sh
+# Скрипт ждёт health до минуты, плюс подъём контейнеров. Лимит нужен, чтобы
+# зависший запуск не блокировал следующие: таймер не запустит новый экземпляр,
+# пока не завершится текущий.
+TimeoutStartSec=600
+# Вывод уходит в журнал: journalctl -u navigator-update
+StandardOutput=journal
+StandardError=journal

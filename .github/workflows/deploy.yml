@@ -1,32 +1,18 @@
-# Выкладка на стенд после зелёного CI.
+# Публикация образов после зелёного CI.
 #
-# Запускается не по пушу, а по **завершению** workflow «CI»: так деплой
-# физически не может обогнать проверки. Условий три, и все обязательны —
-# прогон завершился успехом, это ветка main, и сервер вообще настроен.
+# Запускается не по пушу, а по **завершению** workflow «CI»: так публикация
+# физически не может обогнать проверки. Выкладывается только main и только тот
+# коммит, который прошёл проверки.
 #
-# Включается наличием секретов репозитория, а не правкой кода: задание `guard`
-# проверяет их и без них честно пишет в отчёт, чего не хватает, ничего не
-# собирая и никуда не выкладывая. Секреты (Settings → Secrets and variables →
-# Actions):
+# На сервер отсюда никто не ходит. Входящий SSH с раннеров GitHub до стенда не
+# доходит (решение Р71), поэтому связь развёрнута: сервер сам раз в минуту
+# проверяет реестр и обновляется. Здесь дело заканчивается публикацией образов
+# в GHCR — дальше работает таймер systemd, см. infra/deploy/README.md.
 #
-#   MAX_MINI_APP_DEPLOY_HOST         адрес сервера
-#   MAX_MINI_APP_DEPLOY_USER         пользователь для SSH
-#   MAX_MINI_APP_DEPLOY_SSH_KEY      приватный ключ этого пользователя
-#   MAX_MINI_APP_DEPLOY_KNOWN_HOSTS  вывод `ssh-keyscan ваш-хост`
-#   MAX_MINI_APP_DEPLOY_DOMAIN       домен для проверки стенда после выкладки
-#
-# Первые три обязательны, без них деплой останавливается. Остальные два не
-# блокируют выкладку, но без них ключ сервера не сверяется, а стенд после
-# выкладки не проверяется — задавать стоит все пять.
-#
-# Что нужно на сервере до первого деплоя:
-#
-#   1. установлен Docker с плагином compose;
-#   2. каталог `/opt/navigator` принадлежит пользователю деплоя;
-#   3. в нём лежит `.env` с настоящими паролями — его деплой **не** трогает,
-#      секреты стенда не должны жить в репозитории и в логах Actions;
-#   4. домен указывает на сервер, порты 80 и 443 открыты — иначе Caddy не
-#      выпустит сертификат.
+# Отсюда же метка org.opencontainers.image.revision на образах: тег latest
+# переезжает, а сервер должен знать не «последний», а какой именно коммит он
+# выкладывает. Метка — единственное, что связывает образ с коммитом после того,
+# как тег переехал.
 
 name: Deploy
 
@@ -36,69 +22,38 @@ on:
     types: [completed]
 
 concurrency:
-  # Две одновременные выкладки на один сервер — гарантированная гонка.
+  # Две одновременные публикации переставляли бы тег latest наперегонки,
+  # и сервер мог бы забрать не тот коммит.
   group: deploy-production
   cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
-  DEPLOY_PATH: /opt/navigator
 
 jobs:
-  guard:
-    name: Проверить, есть ли куда выкладывать
-    runs-on: ubuntu-latest
+  publish:
+    name: Собрать и опубликовать образы
+    # Условий осталось два, и проверяются они здесь, а не в отдельном
+    # задании: прогон успешен и это main. Третье — «сервер настроен» —
+    # отпало вместе с выкладкой по SSH: чтобы опубликовать образ в GHCR,
+    # сервер не нужен вовсе.
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'main'
-    outputs:
-      enabled: ${{ steps.check.outputs.enabled }}
-      images: ${{ steps.images.outputs.prefix }}
-    steps:
-      - id: images
-        # GHCR не принимает заглавные буквы в имени образа, а `github.repository`
-        # здесь — `Danil-prog-coder/MAX_mini_app`. Приводим к нижнему регистру
-        # один раз и отдаём обоим заданиям: иначе сервер пошёл бы за одним
-        # именем, а собрано было бы под другим.
-        run: |
-          prefix="$REGISTRY/$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
-          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
-
-      - id: check
-        env:
-          DEPLOY_HOST: ${{ secrets.MAX_MINI_APP_DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.MAX_MINI_APP_DEPLOY_USER }}
-          DEPLOY_SSH_KEY: ${{ secrets.MAX_MINI_APP_DEPLOY_SSH_KEY }}
-        run: |
-          missing=()
-          [ -n "$DEPLOY_HOST" ] || missing+=("MAX_MINI_APP_DEPLOY_HOST")
-          [ -n "$DEPLOY_USER" ] || missing+=("MAX_MINI_APP_DEPLOY_USER")
-          [ -n "$DEPLOY_SSH_KEY" ] || missing+=("MAX_MINI_APP_DEPLOY_SSH_KEY")
-
-          if [ ${#missing[@]} -eq 0 ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "Сервер настроен, выкладываю." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            {
-              echo "### Деплой пропущен"
-              echo
-              echo "Сервер ещё не настроен. Не хватает секретов: \`${missing[*]}\`."
-              echo
-              echo "Добавьте их в Settings → Secrets and variables → Actions,"
-              echo "и следующий зелёный CI на main выложится сам."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  publish:
-    name: Собрать и опубликовать образы
-    needs: guard
-    if: needs.guard.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      images: ${{ steps.images.outputs.prefix }}
     steps:
+      - id: images
+        # GHCR не принимает заглавные буквы в имени образа, а `github.repository`
+        # здесь — `Danil-prog-coder/MAX_mini_app`. Приводим к нижнему регистру.
+        run: |
+          prefix="$REGISTRY/$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v5
         with:
           # Тот самый коммит, который прошёл CI, а не «последний в main»:
@@ -121,8 +76,11 @@ jobs:
           file: apps/core/Dockerfile
           push: true
           tags: |
-            ${{ needs.guard.outputs.images }}/core:${{ github.event.workflow_run.head_sha }}
-            ${{ needs.guard.outputs.images }}/core:latest
+            ${{ steps.images.outputs.prefix }}/core:${{ github.event.workflow_run.head_sha }}
+            ${{ steps.images.outputs.prefix }}/core:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha,scope=core
           cache-to: type=gha,scope=core,mode=max
 
@@ -133,8 +91,11 @@ jobs:
           file: apps/ai-gateway/Dockerfile
           push: true
           tags: |
-            ${{ needs.guard.outputs.images }}/ai-gateway:${{ github.event.workflow_run.head_sha }}
-            ${{ needs.guard.outputs.images }}/ai-gateway:latest
+            ${{ steps.images.outputs.prefix }}/ai-gateway:${{ github.event.workflow_run.head_sha }}
+            ${{ steps.images.outputs.prefix }}/ai-gateway:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha,scope=ai
           cache-to: type=gha,scope=ai,mode=max
 
@@ -151,136 +112,21 @@ jobs:
           build-args: |
             VITE_API_BASE_URL=
           tags: |
-            ${{ needs.guard.outputs.images }}/miniapp:${{ github.event.workflow_run.head_sha }}
-            ${{ needs.guard.outputs.images }}/miniapp:latest
+            ${{ steps.images.outputs.prefix }}/miniapp:${{ github.event.workflow_run.head_sha }}
+            ${{ steps.images.outputs.prefix }}/miniapp:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha,scope=miniapp
           cache-to: type=gha,scope=miniapp,mode=max
 
-  release:
-    name: Выложить на сервер
-    needs: [guard, publish]
-    if: needs.guard.outputs.enabled == 'true'
+  verify:
+    name: Убедиться, что стенд подхватил сборку
+    needs: publish
     runs-on: ubuntu-latest
-    # Выкладка укладывается в пару минут. Лимит нужен не для неё, а для случая,
-    # когда ssh повис на неотвечающем сервере: без него задание досидит до
-    # шестичасового лимита GitHub, занимая очередь и ничего не сообщая.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-
-      - name: Подготовить SSH
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.MAX_MINI_APP_DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.MAX_MINI_APP_DEPLOY_KNOWN_HOSTS }}
-          DEPLOY_HOST: ${{ secrets.MAX_MINI_APP_DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.MAX_MINI_APP_DEPLOY_USER }}
-        run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          if [ -n "$DEPLOY_KNOWN_HOSTS" ]; then
-            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          else
-            # Запасной путь. Он слабее: ключ сервера берётся из сети прямо
-            # сейчас, а не сверяется с известным заранее. Задайте
-            # MAX_MINI_APP_DEPLOY_KNOWN_HOSTS (вывод `ssh-keyscan ваш-хост`),
-            # чтобы подмена сервера не осталась незамеченной.
-            echo "::warning::MAX_MINI_APP_DEPLOY_KNOWN_HOSTS не задан — ключ сервера не сверяется"
-            ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          fi
-          chmod 600 ~/.ssh/known_hosts
-
-          # Параметры соединения задаются здесь, а не флагами у каждой команды:
-          # так они гарантированно одинаковы у ssh и scp и не могут разъехаться.
-          #
-          # BatchMode — главное из них. Без него ssh, не сумев войти по ключу,
-          # переходит к запросу пароля и ждёт ввода, которого в Actions никогда
-          # не будет: задание висит до лимита вместо того, чтобы упасть с
-          # понятной ошибкой. ConnectTimeout и ServerAlive закрывают то же самое
-          # со стороны сети — неотвечающий сервер должен обнаружиться за секунды.
-          cat > ~/.ssh/config <<CONFIG
-          Host deploy-target
-            HostName $DEPLOY_HOST
-            User $DEPLOY_USER
-            IdentityFile ~/.ssh/id_deploy
-            IdentitiesOnly yes
-            BatchMode yes
-            ConnectTimeout 15
-            ServerAliveInterval 15
-            ServerAliveCountMax 4
-          CONFIG
-          chmod 600 ~/.ssh/config
-
-      - name: Проверить связь с сервером
-        # Отдельным шагом и с -v: если выкладка не состоится, причина должна
-        # быть видна в логе сразу («ключ не принят», «хост не отвечает»,
-        # «ключ сервера не совпал»), а не выясняться по косвенным признакам.
-        #
-        # Обёртка timeout нужна отдельно от ConnectTimeout, и это не
-        # перестраховка. ConnectTimeout ограничивает только установку TCP, а
-        # ServerAlive работает уже после аутентификации. Между ними есть щель:
-        # соединение установилось, но обмен ключами не идёт — так бывает, когда
-        # фильтр или чёрная дыра MTU пропускает мелкие пакеты и теряет крупные.
-        # В этой щели ssh висит до таймаута TCP, а это около четверти часа.
-        run: |
-          # Код возврата снимается через `|| status=$?`, а не после `if`:
-          # конструкция `if` возвращает собственный результат и затирает $?.
-          status=0
-          timeout 60 ssh -v deploy-target 'echo "связь есть: $(hostname), docker $(docker --version)"' || status=$?
-          if [ "$status" -eq 124 ]; then
-            echo "::error::SSH не ответил за 60 секунд. Соединение до порта 22 устанавливается, но обмен данными не идёт — смотрите фильтрацию трафика на стороне хостинга и MTU."
-          fi
-          exit "$status"
-
-      - name: Отправить конфигурацию стенда
-        run: |
-          # Только compose-файл и конфиг Caddy. `.env` с паролями лежит на
-          # сервере и деплоем не перезаписывается: секреты стенда не должны
-          # проходить через репозиторий и логи Actions.
-          ssh deploy-target "mkdir -p ${{ env.DEPLOY_PATH }}/infra/caddy/conf.d"
-          scp docker-compose.prod.yml \
-            "deploy-target:${{ env.DEPLOY_PATH }}/docker-compose.prod.yml"
-          scp infra/caddy/Caddyfile \
-            "deploy-target:${{ env.DEPLOY_PATH }}/infra/caddy/Caddyfile"
-          scp infra/caddy/conf.d/admin.caddy.example \
-            "deploy-target:${{ env.DEPLOY_PATH }}/infra/caddy/conf.d/admin.caddy.example"
-
-      - name: Обновить сервисы
-        env:
-          IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          ssh deploy-target bash -euo pipefail <<REMOTE
-          cd ${{ env.DEPLOY_PATH }}
-
-          if [ ! -f .env ]; then
-            echo "на сервере нет ${{ env.DEPLOY_PATH }}/.env — создайте его по .env.example" >&2
-            exit 1
-          fi
-
-          # Токен живёт только пока идёт этот прогон. Для самой выкладки этого
-          # достаточно, но сервер после перезагрузки заново вытянуть приватные
-          # образы уже не сможет: либо пакеты в GHCR делаются публичными, либо
-          # на сервере заводится отдельный долгоживущий логин.
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} \
-            -u ${{ github.actor }} --password-stdin
-
-          # Тег коммита, а не latest: на сервере всегда видно, что именно
-          # выложено, и откат — это запуск с прежним тегом.
-          export IMAGE_TAG=$IMAGE_TAG
-          export IMAGE_CORE=${{ needs.guard.outputs.images }}/core
-          export IMAGE_AI=${{ needs.guard.outputs.images }}/ai-gateway
-          export IMAGE_MINIAPP=${{ needs.guard.outputs.images }}/miniapp
-
-          docker compose -f docker-compose.prod.yml pull
-          # Миграции и заливка справочников — разовые сервисы, они отработают
-          # до старта приложения: подниматься на несовпадающей схеме нельзя.
-          docker compose -f docker-compose.prod.yml up -d --remove-orphans
-          docker image prune -f
-          REMOTE
-
-      - name: Убедиться, что стенд отвечает
+      - name: Дождаться стенда
         env:
           DOMAIN: ${{ secrets.MAX_MINI_APP_DEPLOY_DOMAIN }}
         run: |
@@ -288,14 +134,32 @@ jobs:
             echo "::warning::MAX_MINI_APP_DEPLOY_DOMAIN не задан — проверить стенд снаружи нечем"
             exit 0
           fi
-          # Первый деплой ждёт выпуска сертификата, поэтому не одна попытка.
-          for attempt in $(seq 1 10); do
-            if curl -fsS --max-time 10 "https://$DOMAIN/health" > /dev/null; then
+
+          # Таймер на сервере просыпается раз в минуту, плюс подъём контейнеров
+          # и выпуск сертификата на первом деплое. Отсюда столько попыток.
+          for attempt in $(seq 1 30); do
+            if curl -fsS --max-time 10 "https://$DOMAIN/health" > /dev/null 2>&1; then
               echo "стенд отвечает: https://$DOMAIN" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
-            echo "попытка $attempt: стенд ещё не отвечает, жду"
-            sleep 15
+            sleep 20
           done
-          echo "::error::после выкладки https://$DOMAIN/health не отвечает"
-          exit 1
+
+          # Предупреждение, а не ошибка, и это не смягчение приговора.
+          # Отсюда нельзя отличить «стенд не поднялся» от «раннер не достучался
+          # до стенда»: входящий SSH с GitHub на этот сервер уже не доходит
+          # (решение Р71), и HTTPS может не доходить ровно так же. Утверждать
+          # по такой проверке, что выкладка провалилась, значит врать в половине
+          # случаев. Настоящая проверка живости — на сервере, в журнале
+          # navigator-update, и она авторитетна.
+          {
+            echo "### Стенд не ответил"
+            echo
+            echo "За десять минут \`https://$DOMAIN/health\` так и не отозвался."
+            echo "Это может значить и что выкладка не прошла, и что до стенда"
+            echo "не достучался сам раннер. Отличить можно только на сервере:"
+            echo
+            echo '    journalctl -u navigator-update -n 50'
+            echo '    cat /opt/navigator/.deployed'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::Стенд не ответил за десять минут — проверьте journalctl -u navigator-update на сервере"
