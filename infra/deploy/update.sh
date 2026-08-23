@@ -81,6 +81,13 @@ curl -fsSL "$raw/$COMPOSE_FILE"                          -o "$tmp/$COMPOSE_FILE"
 curl -fsSL "$raw/infra/caddy/Caddyfile"                  -o "$tmp/infra/caddy/Caddyfile"
 curl -fsSL "$raw/infra/caddy/conf.d/admin.caddy.example" -o "$tmp/infra/caddy/conf.d/admin.caddy.example"
 
+# Слепок конфигурации Caddy до подмены — понадобится ниже, чтобы понять,
+# нужно ли просить его перечитать конфиг.
+# `|| true` обязателен: при первой выкладке файлов ещё нет, cat возвращает
+# ошибку, а под `set -o pipefail` она роняет весь скрипт.
+caddy_config() { { cat "$ROOT/infra/caddy/Caddyfile" "$ROOT"/infra/caddy/conf.d/*.caddy 2>/dev/null || true; } | sha256sum; }
+caddy_before=$(caddy_config)
+
 mkdir -p "$ROOT/infra/caddy/conf.d"
 install -m 644 "$tmp/$COMPOSE_FILE"                          "$ROOT/$COMPOSE_FILE"
 install -m 644 "$tmp/infra/caddy/Caddyfile"                  "$ROOT/infra/caddy/Caddyfile"
@@ -91,6 +98,19 @@ compose pull -q
 # migrate и seed — разовые сервисы, compose отработает их до старта приложения:
 # подниматься на несовпадающей схеме нельзя.
 compose up -d --remove-orphans
+
+# Caddy читает конфиг при старте, а `compose up` не пересоздаёт контейнер из-за
+# того, что изменилось содержимое bind-монтированного файла: для compose сервис
+# не менялся — ни образ, ни определение. Без этого новый Caddyfile лёг бы на
+# диск и остался непрочитанным, а мы бы сочли, что правка не помогла.
+if [ "$caddy_before" != "$(caddy_config)" ]; then
+  echo "конфигурация Caddy изменилась — перечитываю"
+  # Сначала штатная перезагрузка: она не рвёт открытые соединения и не теряет
+  # уже выпущенные сертификаты. Пересоздание — запасной путь на случай, когда
+  # контейнера нет или конфиг не принят.
+  compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null \
+    || compose up -d --force-recreate caddy
+fi
 
 printf '%s\n' "$revision" > "$ROOT/.deployed"
 docker image prune -f > /dev/null
