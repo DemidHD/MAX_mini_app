@@ -122,6 +122,20 @@ class TestPositionSync:
         assert await feed_of(api_client) == []
 
 
+def schedule_today() -> date:
+    """Сегодня по часам расписания, а не по часам раннера.
+
+    `date.today()` здесь читался бы естественно и был бы неверен: сервис
+    считает дату по Москве, и с 21:00 UTC до полуночи «завтра» у теста и
+    «завтра» у сервиса — разные дни. Тесты падали именно в это окно, каждый
+    день по три часа.
+
+    Дату нельзя просто прибить константой: `add_deadline` сверяет её
+    с настоящими часами и отвергает прошедшую.
+    """
+    return datetime.now(schedule.SCHEDULE_TIMEZONE).date()
+
+
 class TestDeadlineReminders:
     async def test_reminder_a_day_before(
         self, api_client: httpx.AsyncClient, integration_settings: Settings
@@ -130,10 +144,13 @@ class TestDeadlineReminders:
         await users.sync_universities()
         university = (await users.list_universities())[0]
         user = await student("u-1", university)
-        tomorrow = date.today() + timedelta(days=1)
-        await schedule.add_deadline(user, "Курсовая", tomorrow)
+        # День фиксируется один раз и передаётся задаче явно — так же, как
+        # в остальных тестах файла. Иначе тест и задача берут «сегодня»
+        # каждый свой, и результат зависит от часа прогона.
+        day = schedule_today()
+        await schedule.add_deadline(user, "Курсовая", day + timedelta(days=1))
 
-        report = await schedule.deadline_reminders(integration_settings)
+        report = await schedule.deadline_reminders(integration_settings, today=day)
 
         assert report.sent == 1
         assert (await feed_of(api_client))[0]["kind"] == "deadline_soon"
@@ -144,9 +161,10 @@ class TestDeadlineReminders:
         await users.sync_universities()
         university = (await users.list_universities())[0]
         user = await student("u-1", university)
-        await schedule.add_deadline(user, "Отчёт", date.today() + timedelta(days=9))
+        day = schedule_today()
+        await schedule.add_deadline(user, "Отчёт", day + timedelta(days=9))
 
-        report = await schedule.deadline_reminders(integration_settings)
+        report = await schedule.deadline_reminders(integration_settings, today=day)
 
         assert report.sent == 0
 
@@ -156,10 +174,11 @@ class TestDeadlineReminders:
         await users.sync_universities()
         university = (await users.list_universities())[0]
         user = await student("u-1", university)
-        await schedule.add_deadline(user, "Курсовая", date.today() + timedelta(days=1))
-        await schedule.deadline_reminders(integration_settings)
+        day = schedule_today()
+        await schedule.add_deadline(user, "Курсовая", day + timedelta(days=1))
+        await schedule.deadline_reminders(integration_settings, today=day)
 
-        report = await schedule.deadline_reminders(integration_settings)
+        report = await schedule.deadline_reminders(integration_settings, today=day)
 
         assert report.sent == 0
         assert len(await feed_of(api_client)) == 1
