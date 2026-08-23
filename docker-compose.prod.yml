@@ -59,15 +59,20 @@ x-core-env: &core-env
 
 services:
   caddy:
-    image: caddy:2-alpine
+    # Свой образ, а не официальный: в него добавлен DNS-плагин Cloudflare,
+    # без которого не работает испытание dns-01 (решение Р72).
+    image: ${IMAGE_CADDY:-ghcr.io/danil-prog-coder/max_mini_app/caddy}:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    # Единственный сервис с портами наружу. TLS-сертификат Caddy получает и
-    # продлевает сам, для этого ему нужны 80 и 443 и настоящий домен.
+    # Единственный сервис с портами наружу.
     ports:
       - '80:80'
       - '443:443'
     environment:
       DOMAIN: ${DOMAIN:?нужен домен, на который выпускать сертификат}
+      # Токен Cloudflare с правом менять записи зоны. Сертификат выпускается
+      # через dns-01, поэтому без токена Caddy не поднимется — и это правильнее,
+      # чем подняться без TLS и молча отдавать стенд по HTTP.
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?нужен токен Cloudflare для выпуска сертификата}
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       # Каталог дополнительных сайтов: пустой по умолчанию, сюда кладётся
