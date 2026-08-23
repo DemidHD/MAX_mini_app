@@ -122,6 +122,10 @@ services:
     restart: 'no'
     command: ['aerich', 'upgrade']
     environment: *core-env
+    # Разовое задание: отработало и вышло, пробовать нечего. Унаследованная
+    # от core проба стучалась бы в несуществующий HTTP.
+    healthcheck:
+      test: ['NONE']
     depends_on:
       postgres:
         condition: service_healthy
@@ -132,6 +136,10 @@ services:
     restart: 'no'
     command: ['python', '-m', 'navigator.seed']
     environment: *core-env
+    # Разовое задание: отработало и вышло, пробовать нечего. Унаследованная
+    # от core проба стучалась бы в несуществующий HTTP.
+    healthcheck:
+      test: ['NONE']
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -147,6 +155,16 @@ services:
     <<: *core-image
     command: ['celery', '-A', 'navigator.worker.celery_app:app', 'worker', '--loglevel=info']
     environment: *core-env
+    # Проба из образа core стучится в HTTP на 8000, которого у celery нет,
+    # поэтому воркер вечно висел бы unhealthy. Не косметика: пока в `ps`
+    # половина сервисов красная всегда, по ней нельзя заметить настоящую
+    # поломку. Здесь спрашиваем сам celery.
+    healthcheck:
+      test: ['CMD', 'celery', '-A', 'navigator.worker.celery_app:app', 'inspect', 'ping']
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
     depends_on: *core-depends-on
     networks: [navigator]
 
@@ -162,6 +180,11 @@ services:
         '--schedule=/tmp/celerybeat-schedule',
       ]
     environment: *core-env
+    # Планировщик ничего не слушает и никому не отвечает — спрашивать его
+    # нечем. Унаследованная от core проба врала бы, поэтому снята: пусть
+    # состояние будет «без пробы», а не «сломан».
+    healthcheck:
+      test: ['NONE']
     depends_on: *core-depends-on
     networks: [navigator]
 
@@ -170,6 +193,20 @@ services:
     command:
       ['uvicorn', 'navigator.admin:create_app', '--factory', '--host', '0.0.0.0', '--port', '8001']
     environment: *core-env
+    # Тот же образ, но порт другой — 8001 вместо 8000. Унаследованная проба
+    # ходила не туда.
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).status == 200 else 1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
     depends_on: *core-depends-on
     networks: [navigator]
 
