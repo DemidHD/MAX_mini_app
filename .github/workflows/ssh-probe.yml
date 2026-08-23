@@ -1,0 +1,102 @@
+# Разбор связи с сервером. Не часть выкладки — запускается только руками.
+#
+# Нужен, потому что «деплой не проходит» распадается на несколько разных
+# причин, а отличить их по логу выкладки нельзя: она падает одинаково.
+# Проба разносит их по двум осям и проверяет все сочетания за один прогон.
+#
+#   Ось 1 — порт. Фильтры, разбирающие протокол SSH, почти всегда привязаны
+#   к 22-му порту. Если рукопожатие проходит на 2222 и не проходит на 22 —
+#   дело в фильтре, и лечится сменой порта.
+#
+#   Ось 2 — размер пакетов. OpenSSH по умолчанию торгуется постквантовыми
+#   алгоритмами, и его KEXINIT весит больше килобайта. Урезанный набор
+#   ужимает тот же пакет примерно до трёхсот байт. Если рукопожатие проходит
+#   только с урезанным набором — крупные пакеты теряются на пути к серверу,
+#   и лечится это со стороны сети, а не SSH.
+#
+# Каждая проба идёт тремя стадиями по возрастанию: TCP-соединение, баннер
+# сервера, полное рукопожатие. Стадии разделены намеренно — «TCP есть,
+# баннер есть, рукопожатия нет» это совсем другой диагноз, чем «TCP нет».
+
+name: Диагностика SSH
+
+on:
+  workflow_dispatch:
+    inputs:
+      ports:
+        description: Порты SSH через запятую
+        default: '22,2222'
+        required: true
+
+jobs:
+  probe:
+    name: Где и как проходит рукопожатие
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Подготовить ключ
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.MAX_MINI_APP_DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+      - name: Пробы
+        env:
+          DEPLOY_HOST: ${{ secrets.MAX_MINI_APP_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.MAX_MINI_APP_DEPLOY_USER }}
+          PORTS: ${{ inputs.ports }}
+        run: |
+          # Урезанный набор: один алгоритм на каждую позицию вместо всех
+          # поддерживаемых. Смысл не в криптографии, а в длине KEXINIT.
+          SMALL="-o KexAlgorithms=curve25519-sha256"
+          SMALL="$SMALL -o HostKeyAlgorithms=ssh-ed25519"
+          SMALL="$SMALL -o PubkeyAcceptedAlgorithms=ssh-ed25519"
+          SMALL="$SMALL -o Ciphers=aes128-ctr -o MACs=hmac-sha2-256"
+
+          {
+            echo "### Связь с сервером по SSH"
+            echo
+            echo "| Порт | Набор алгоритмов | TCP | Баннер | Рукопожатие |"
+            echo "|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          verdict=провал
+
+          for port in ${PORTS//,/ }; do
+            tcp=нет
+            timeout 10 bash -c "exec 3<>/dev/tcp/$DEPLOY_HOST/$port" 2>/dev/null && tcp=да
+
+            banner=нет
+            got=$(timeout 15 bash -c "exec 3<>/dev/tcp/$DEPLOY_HOST/$port; head -c 40 <&3" 2>/dev/null || true)
+            case "$got" in SSH-*) banner=да ;; esac
+
+            for mode in обычный урезанный; do
+              opts=""
+              [ "$mode" = урезанный ] && opts="$SMALL"
+
+              log=/tmp/ssh-$port-$mode.log
+              hs=нет
+              # shellcheck disable=SC2086
+              if timeout 40 ssh -v -p "$port" -i ~/.ssh/id_deploy $opts \
+                   -o BatchMode=yes -o StrictHostKeyChecking=no \
+                   -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 \
+                   "$DEPLOY_USER@$DEPLOY_HOST" 'echo РУКОПОЖАТИЕ_ПРОШЛО' > "$log" 2>&1; then
+                grep -q 'РУКОПОЖАТИЕ_ПРОШЛО' "$log" && { hs=да; verdict="работает: порт $port, набор $mode"; }
+              fi
+
+              echo "| $port | $mode | $tcp | $banner | $hs |" >> "$GITHUB_STEP_SUMMARY"
+              echo "═══════ порт $port, набор $mode ═══════"
+              tail -25 "$log" || true
+            done
+          done
+
+          {
+            echo
+            echo "**Итог:** $verdict"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Проба сообщает результат, а не падает: «нигде не прошло» — это
+          # тоже ответ, и ради него прогон и запускался.
+          echo "итог: $verdict"
