@@ -120,6 +120,21 @@ jobs:
           cache-from: type=gha,scope=miniapp
           cache-to: type=gha,scope=miniapp,mode=max
 
+      - name: Caddy
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/caddy/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.images.outputs.prefix }}/caddy:${{ github.event.workflow_run.head_sha }}
+            ${{ steps.images.outputs.prefix }}/caddy:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=caddy
+          cache-to: type=gha,scope=caddy,mode=max
+
   verify:
     name: Убедиться, что стенд подхватил сборку
     needs: publish

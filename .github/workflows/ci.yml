@@ -273,3 +273,32 @@ jobs:
           push: false
           cache-from: type=gha,scope=miniapp
           cache-to: type=gha,scope=miniapp,mode=max
+
+      - name: Caddy с DNS-плагином
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/caddy/Dockerfile
+          push: false
+          # Образ остаётся в локальном демоне: следующий шаг разбирает им
+          # конфигурацию.
+          load: true
+          tags: navigator-caddy:ci
+          cache-from: type=gha,scope=caddy
+          cache-to: type=gha,scope=caddy,mode=max
+
+      - name: Конфигурация Caddy разбирается
+        env:
+          # Значения подставные: проверяется синтаксис и наличие модулей,
+          # а не доступ к Cloudflare.
+          DOMAIN: example.test
+          CLOUDFLARE_API_TOKEN: не-настоящий-токен
+        run: |
+          # Проверка ловит две разные поломки сразу: ошибку в самом Caddyfile
+          # и отсутствие в образе DNS-плагина, без которого директива
+          # `dns cloudflare` не разберётся. Обе до сих пор обнаружились бы
+          # только на сервере — то есть упавшим стендом.
+          docker run --rm -e DOMAIN -e CLOUDFLARE_API_TOKEN \
+            -v "$PWD/infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            -v "$PWD/infra/caddy/conf.d:/etc/caddy/conf.d:ro" \
+            navigator-caddy:ci caddy validate --config /etc/caddy/Caddyfile
