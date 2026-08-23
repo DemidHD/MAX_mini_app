@@ -322,7 +322,26 @@ jobs:
           # и отсутствие в образе DNS-плагина, без которого директива
           # `dns cloudflare` не разберётся. Обе до сих пор обнаружились бы
           # только на сервере — то есть упавшим стендом.
-          docker run --rm -e DOMAIN -e CLOUDFLARE_API_TOKEN \
+          status=0
+          out=$(docker run --rm -e DOMAIN -e CLOUDFLARE_API_TOKEN \
             -v "$PWD/infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
             -v "$PWD/infra/caddy/conf.d:/etc/caddy/conf.d:ro" \
-            navigator-caddy:ci caddy validate --config /etc/caddy/Caddyfile
+            navigator-caddy:ci caddy validate --adapter caddyfile \
+            --config /etc/caddy/Caddyfile 2>&1) || status=$?
+          echo "$out"
+
+          [ "$status" -eq 0 ] && exit 0
+
+          # Текст ошибки дублируется в аннотацию и в отчёт. Тело лога Actions
+          # доступно не отовсюду, а «Process completed with exit code 1» без
+          # самой причины заставляет лезть в интерфейс руками — при том что
+          # причина уже известна и умещается в строку.
+          {
+            echo "### Конфигурация Caddy не разбирается"
+            echo
+            echo '```'
+            echo "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          printf '::error::caddy validate: %s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
+          exit "$status"
