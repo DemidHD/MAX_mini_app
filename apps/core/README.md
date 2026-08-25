@@ -27,6 +27,22 @@ uv run celery -A navigator.worker.celery_app:app beat   --loglevel=info
 
 Postgres и Redis нужны свои — проще поднять всё через `make up` из корня.
 
+### Установка без uv (PaaS-панели)
+
+Панели, которые умеют только `pip`, ставят зависимости из `requirements.txt`.
+Команды выполняются **из этого каталога** — в первой строке файла стоит `-e .`,
+которая и ставит сам пакет `navigator` из `src/`:
+
+```bash
+python3.13 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+aerich upgrade                     # миграции до первого старта
+uvicorn navigator.api.app:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+Файл генерируется из `uv.lock` командой `make requirements` и руками не
+правится — зависимость добавляется в `pyproject.toml` (решение Р75).
+
 ## Справочные данные
 
 ```bash

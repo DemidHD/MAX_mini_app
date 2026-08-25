@@ -144,3 +144,11 @@ api-types: ## Перегенерировать типы фронтенда из 
 	# бэкенд пишут разные люди.
 	cd $(CORE) && uv run python -m navigator.api.openapi > ../../$(MINIAPP)/openapi.json
 	pnpm --filter miniapp api:types
+
+.PHONY: requirements
+requirements: ## Перегенерировать requirements.txt бэкенд-сервисов из uv.lock
+	# Файлы нужны платформам, которые умеют только `pip install -r`
+	# (панель Timeweb). Источник истины остаётся uv.lock — правится он,
+	# requirements.txt всегда производный. CI проверяет, что они совпадают.
+	cd $(CORE) && uv export --frozen --no-dev --no-hashes --format requirements-txt -o requirements.txt
+	cd $(AI) && uv export --frozen --no-dev --no-hashes --format requirements-txt -o requirements.txt
