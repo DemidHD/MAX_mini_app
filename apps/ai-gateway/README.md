@@ -40,6 +40,15 @@ uv run uvicorn navigator_ai.main:create_app --factory --reload --port 8100
 uv run pytest
 ```
 
+Без uv, из этого каталога (`requirements.txt` производный от `uv.lock`,
+генерируется `make requirements`, решение Р75):
+
+```bash
+python3.13 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+uvicorn navigator_ai.main:create_app --factory --host 127.0.0.1 --port 8100
+```
+
 ## Состояние
 
 Сделано всё, что перечислено в тех. ТЗ 5: три внутренних эндпоинта, шаблоны

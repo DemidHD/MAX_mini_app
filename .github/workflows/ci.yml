@@ -145,6 +145,22 @@ jobs:
           uv run mypy
           uv run pytest -q
 
+      - name: requirements.txt не разошлись с локами
+        # Файлы производные от uv.lock и нужны платформам, которые умеют
+        # только `pip install -r` (панель Timeweb). Разошедшийся requirements
+        # означает, что стенд и панель ставят разные версии — воспроизводится
+        # это уже на проде. Регенерация: `make requirements`.
+        run: |
+          cd apps/core && uv export --frozen --no-dev --no-hashes \
+            --format requirements-txt -o requirements.txt && cd ../..
+          cd apps/ai-gateway && uv export --frozen --no-dev --no-hashes \
+            --format requirements-txt -o requirements.txt && cd ../..
+          if ! git diff --quiet -- apps/core/requirements.txt apps/ai-gateway/requirements.txt; then
+            git diff -- apps/core/requirements.txt apps/ai-gateway/requirements.txt
+            echo "::error::requirements.txt разошлись с uv.lock — выполните make requirements"
+            exit 1
+          fi
+
       - name: Границы доменов не нарушены
         working-directory: apps/core
         # Отдельным шагом, хотя тест уже прогнан выше: правило из тех. ТЗ 1.1
