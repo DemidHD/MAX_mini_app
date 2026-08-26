@@ -30,17 +30,19 @@ install: ## Установить зависимости всех сервисо�
 # ─── запуск ──────────────────────────────────────────────────────────────────
 
 .PHONY: up
-up: env ## Поднять бэкенд локально (Postgres, Redis, Core API, Worker, Beat, AI Gateway)
+up: env ## Поднять весь стек локально — тот же набор, что работает на стенде
 	docker compose up --build -d
 	@echo
+	@echo "  приложение       https://localhost:$${HTTPS_PORT:-443} (сертификат самоподписанный)"
 	@echo "  Core API         http://localhost:$${CORE_API_PORT:-8010}/docs"
 	@echo "  админка          http://localhost:8001"
 	@echo "  AI Gateway       только внутри docker-сети (тех. ТЗ 5)"
 	@echo
-	@echo "  фронтенд поднимается отдельно: make dev-front (или make up-all)"
+	@echo "  это продовая сборка статики: для работы над фронтом нужен"
+	@echo "  dev-сервер с HMR — make dev-front (или make up-all)"
 
 .PHONY: up-all
-up-all: env ## То же плюс фронтенд в контейнере (профиль frontend)
+up-all: env ## То же плюс dev-сервер Vite в контейнере (профиль frontend)
 	docker compose --profile frontend up --build -d
 	@echo
 	@echo "  мини-приложение  http://localhost:5173"

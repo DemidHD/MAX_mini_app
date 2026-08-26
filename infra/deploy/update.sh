@@ -18,11 +18,11 @@ REPO=Danil-prog-coder/MAX_mini_app
 # которые прогоняют скрипт целиком на подставных docker и curl.
 ROOT=${NAVIGATOR_ROOT:-/opt/navigator}
 PREFIX=ghcr.io/danil-prog-coder/max_mini_app
-COMPOSE_FILE=docker-compose.prod.yml
+COMPOSE_FILE=docker-compose.yml
 
 # Долгоживущие сервисы. migrate и seed сюда не входят намеренно: они разовые и
 # в нормальном состоянии именно что не запущены.
-SERVICES='caddy core-api miniapp ai-gateway'
+SERVICES='nginx core-api miniapp ai-gateway'
 
 cd "$ROOT"
 
@@ -76,36 +76,40 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 raw="https://raw.githubusercontent.com/$REPO/$revision"
-mkdir -p "$tmp/infra/caddy/conf.d"
-curl -fsSL "$raw/$COMPOSE_FILE"                          -o "$tmp/$COMPOSE_FILE"
-curl -fsSL "$raw/infra/caddy/Caddyfile"                  -o "$tmp/infra/caddy/Caddyfile"
-curl -fsSL "$raw/infra/caddy/conf.d/admin.caddy.example" -o "$tmp/infra/caddy/conf.d/admin.caddy.example"
+mkdir -p "$tmp/infra/nginx"
+curl -fsSL "$raw/$COMPOSE_FILE"                -o "$tmp/$COMPOSE_FILE"
+curl -fsSL "$raw/infra/nginx/default.conf"     -o "$tmp/infra/nginx/default.conf"
 
-mkdir -p "$ROOT/infra/caddy/conf.d"
-install -m 644 "$tmp/$COMPOSE_FILE"                          "$ROOT/$COMPOSE_FILE"
-install -m 644 "$tmp/infra/caddy/Caddyfile"                  "$ROOT/infra/caddy/Caddyfile"
-install -m 644 "$tmp/infra/caddy/conf.d/admin.caddy.example" "$ROOT/infra/caddy/conf.d/admin.caddy.example"
+mkdir -p "$ROOT/infra/nginx"
+install -m 644 "$tmp/$COMPOSE_FILE"            "$ROOT/$COMPOSE_FILE"
+install -m 644 "$tmp/infra/nginx/default.conf" "$ROOT/infra/nginx/default.conf"
 
 # ── 4. Подъём ────────────────────────────────────────────────────────────────
 compose pull -q
 # migrate и seed — разовые сервисы, compose отработает их до старта приложения:
 # подниматься на несовпадающей схеме нельзя.
-compose up -d --remove-orphans
+#
+# --no-build обязателен. Файл compose теперь один на локальный запуск и на
+# стенд, и в нём у сервисов есть секция `build`: без этого флага compose,
+# не найдя образа, взялся бы собирать его прямо здесь — то есть ровно то,
+# от чего уводит решение Р70 (собирает CI, сервер только выкладывает).
+compose up -d --remove-orphans --no-build
 
-# Caddy читает конфиг при старте, а `compose up` не пересоздаёт контейнер из-за
+# nginx читает конфиг при старте, а `compose up` не пересоздаёт контейнер из-за
 # того, что изменилось содержимое bind-монтированного файла: для compose сервис
-# не менялся — ни образ, ни определение. Без этого новый Caddyfile лёг бы на
+# не менялся — ни образ, ни определение. Без этого новый default.conf лёг бы на
 # диск и остался непрочитанным.
+#
+# Сертификата это не касается: он приходит переменными окружения, а изменение
+# окружения compose видит и контейнер пересоздаёт сам.
 #
 # Перечитываем безусловно, а не по изменению файла. Сравнение слепков «до
 # и после» выглядело экономнее, но у него есть дыра, в которую мы уже попали:
 # если файл на диске обновился раньше, чем появилась перезагрузка, слепок не
-# изменится никогда, и Caddy навсегда останется со старым конфигом в памяти.
-# Безусловный reload такого состояния не допускает: неизменный конфиг Caddy
-# распознаёт сам и ничего не делает.
-echo "перечитываю конфигурацию Caddy"
-compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null \
-  || compose up -d --force-recreate caddy
+# изменится никогда, и nginx навсегда останется со старым конфигом в памяти.
+echo "перечитываю конфигурацию nginx"
+compose exec -T nginx nginx -s reload 2>/dev/null \
+  || compose up -d --force-recreate nginx
 
 printf '%s\n' "$revision" > "$ROOT/.deployed"
 docker image prune -f > /dev/null
@@ -114,11 +118,9 @@ docker image prune -f > /dev/null
 # Раннер GitHub до этого сервера не достучится, поэтому единственная надёжная
 # проверка живости — локальная. В журнале systemd она и остаётся.
 #
-# Спрашиваем сам core-api изнутри его контейнера, а не Caddy снаружи. Caddy
-# отдаёт сайт только для своего домена, и запрос на 127.0.0.1 в этот блок
-# не попадёт вовсе; вдобавок на первом деплое сертификата ещё нет. А отвалиться
+# Спрашиваем сам core-api изнутри его контейнера, а не nginx снаружи: отвалиться
 # после обновления скорее всего может именно приложение — на миграциях или на
-# подключении к базе.
+# подключении к базе, — а не прокси перед ним.
 healthy=нет
 for attempt in $(seq 1 20); do
   if compose exec -T core-api python -c \
@@ -136,9 +138,9 @@ if [ "$healthy" != да ]; then
 fi
 
 # Публичный адрес проверяется отдельно и не влияет на исход: он зависит от
-# выпуска сертификата, а тот — от внешнего DNS и доступности порта 80. Стенд,
-# который поднялся правильно, не должен считаться сломанным из-за того, что
-# Let's Encrypt ещё не ответил.
+# сертификата в .env и от внешнего DNS, то есть от того, что выкладка не
+# меняет. Стенд, который поднялся правильно, не должен считаться сломанным
+# из-за просроченного сертификата — но увидеть это в журнале нужно.
 domain=$(sed -n 's/^DOMAIN=//p' "$ROOT/.env" | head -1)
 if [ -n "$domain" ] && curl -fsS --max-time 10 --resolve "$domain:443:127.0.0.1" \
      "https://$domain/health" > /dev/null 2>&1; then

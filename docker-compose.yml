@@ -1,21 +1,27 @@
-# Локальный запуск всей системы одной командой (тех. ТЗ 9.3).
+# Запуск всей системы одной командой — и локально, и на стенде (тех. ТЗ 9.3).
 #
-#     cp .env.example .env && docker compose up --build
+#     локально:  cp .env.example .env && docker compose up --build
+#     на стенде: docker compose pull && docker compose up -d
 #
-# Продовый деплой не настраивается, пока нет сервера и домена, поэтому здесь
-# сознательно: dev-сервер Vite вместо nginx, MOCK_AUTH включён, схема БД
-# создаётся из моделей, порты Postgres и Redis открыты на localhost для psql
-# и redis-cli.
+# Файл один. Разделение на локальный и продовый существовало ровно затем,
+# чтобы в одном собирать образы, а в другом брать их из реестра, — но `build`
+# и `image` уживаются в одном определении: с `--build` образ собирается
+# локально, без него берётся из GHCR по тегу `IMAGE_TAG`. Всё остальное
+# различие сводилось к значениям переменных, а им место в `.env`, а не во
+# втором почти таком же файле, который расходится с первым при каждой правке.
 #
-# Значения берутся из `.env`, если он есть; иначе действуют значения по
-# умолчанию, указанные ниже и совпадающие с `.env.example`.
+# Значения берутся из `.env`, если он есть; иначе действуют умолчания ниже,
+# рассчитанные на локальный запуск и совпадающие с `.env.example`. На стенде
+# `.env` переопределяет их: ENVIRONMENT, DEBUG, DOMAIN, пароли, TLS.
 
 name: navigator
 
 x-core-image: &core-image
+  image: ${IMAGE_CORE:-ghcr.io/danil-prog-coder/max_mini_app/core}:${IMAGE_TAG:-latest}
   build:
     context: .
     dockerfile: apps/core/Dockerfile
+  restart: unless-stopped
 
 # Сервисы приложения ждут не только живых Postgres и Redis, но и завершения
 # миграций и заливки справочников: подниматься на несовпадающей схеме
@@ -49,16 +55,108 @@ x-core-env: &core-env
   # Доступ в админку — отдельная роль (уточнение У26, тех. ТЗ 9.4).
   ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-  # Только для локального запуска: подпись initData не проверяется, пользователь
-  # опознаётся заголовком X-Max-User-Id (тех. ТЗ 9.3). В production сервис с этим
-  # флагом не поднимется — проверка в navigator.config.
+  # Подпись initData не проверяется, пользователь опознаётся заголовком
+  # X-Max-User-Id (тех. ТЗ 9.3). В production сервис с этим флагом не
+  # поднимется — проверка в navigator.config. На стенде ENVIRONMENT=staging
+  # именно поэтому: алгоритм проверки подписи ещё не сверен с документацией
+  # MAX (тех. ТЗ 9.7), и стенд остаётся демонстрационным.
   MOCK_AUTH: ${MOCK_AUTH:-true}
   MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
+  # За nginx фронтенд и API живут на одном домене, поэтому на стенде список
+  # пустой: браузер не делает кросс-доменных запросов (решение Р67). Локально
+  # адрес dev-сервера Vite отличается от адреса API, и он здесь перечислен.
   CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
 
 services:
+  nginx:
+    # Официальный образ без своей сборки: ничего, кроме конфига и пары
+    # сертификат/ключ, ему не нужно.
+    image: nginx:1-alpine
+    restart: unless-stopped
+    # Единственный сервис с портами наружу.
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      # Открытая часть (сертификат с цепочкой) и закрытый ключ. Оба — PEM,
+      # можно как есть, можно в base64: скрипт ниже разбирает оба вида.
+      # В репозиторий не попадают и в секреты GitHub не кладутся — живут
+      # только в `.env` на сервере (решение Р76).
+      TLS_CERT: ${TLS_CERT:-}
+      TLS_KEY: ${TLS_KEY:-}
+      # Нужен только для самоподписанного сертификата локально: в конфиге
+      # стоит `server_name _`, и домен ему безразличен.
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    # Каталог с ключом — в памяти, а не на диске: копии закрытого ключа
+    # незачем оседать в слое контейнера.
+    tmpfs:
+      - /etc/nginx/certs:mode=700
+    # Сертификат и ключ приходят переменными окружения, а nginx умеет читать
+    # их только из файлов — это и есть весь перевод. Отдельного скрипта или
+    # своего образа ради пятнадцати строк не заводим.
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        certs=/etc/nginx/certs
+
+        # Значение либо PEM как есть, либо он же в base64.
+        write_pem() {
+          case "$$1" in
+            -----BEGIN*) printf '%s\n' "$$1" ;;
+            *)           printf '%s' "$$1" | base64 -d ;;
+          esac
+        }
+
+        if [ -n "$$TLS_CERT" ] && [ -n "$$TLS_KEY" ]; then
+          write_pem "$$TLS_CERT" > "$$certs/cert.pem"
+          write_pem "$$TLS_KEY"  > "$$certs/key.pem"
+        elif [ -n "$$TLS_CERT" ] || [ -n "$$TLS_KEY" ]; then
+          # Половина пары — почти всегда опечатка в имени переменной. Молча
+          # свалиться в самоподписанный сертификат здесь нельзя: снаружи это
+          # неотличимо от рабочего стенда, а внутри — сломанный вход.
+          echo "nginx: задана только одна половина пары TLS_CERT/TLS_KEY" >&2
+          exit 1
+        else
+          echo "nginx: TLS_CERT и TLS_KEY пусты, беру самоподписанный на $$DOMAIN." >&2
+          echo "nginx: это годится только локально. На стенде так быть не должно." >&2
+          # openssl в официальном образе не установлен: на время сборки его
+          # кладут во временную группу и удаляют (проверено по Dockerfile
+          # образа). Поэтому ставим на месте — ветка выполняется только
+          # локально, где сеть есть, и на стенде не выполняется никогда.
+          command -v openssl > /dev/null || apk add --no-cache openssl > /dev/null 2>&1 || {
+            echo "nginx: openssl не установлен и поставить не удалось." >&2
+            echo "nginx: задайте TLS_CERT и TLS_KEY в .env — см. .env.example." >&2
+            exit 1
+          }
+          openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+            -subj "/CN=$$DOMAIN" \
+            -keyout "$$certs/key.pem" -out "$$certs/cert.pem" 2> /dev/null
+        fi
+
+        chmod 600 "$$certs/key.pem"
+        # Сертификат, ключ и их соответствие друг другу проверяет сам nginx:
+        # на негодной паре он не стартует и пишет, что именно не так.
+        exec nginx -g 'daemon off;'
+    depends_on:
+      - miniapp
+      - core-api
+    healthcheck:
+      # Отдельный путь на 80-м порту, до редиректа на https: проба не должна
+      # ходить сама к себе по TLS и спотыкаться о самоподписанный сертификат.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    networks: [navigator]
+
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-navigator}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-navigator}
@@ -82,6 +180,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     # appendonly — чтобы поставленные в очередь задачи Celery переживали
     # перезапуск контейнера.
     command: ["redis-server", "--appendonly", "yes"]
@@ -103,10 +202,14 @@ services:
     # раз, а не в каждом контейнере при масштабировании.
     command: ["aerich", "upgrade"]
     environment: *core-env
+    restart: "no"
+    # Разовое задание: отработало и вышло, пробовать нечего. Унаследованная
+    # от core проба стучалась бы в несуществующий HTTP.
+    healthcheck:
+      test: ["NONE"]
     depends_on:
       postgres:
         condition: service_healthy
-    restart: "no"
     networks: [navigator]
 
   seed:
@@ -117,19 +220,20 @@ services:
     # заливку не нужно помнить руками.
     command: ["python", "-m", "navigator.seed"]
     environment: *core-env
+    restart: "no"
+    healthcheck:
+      test: ["NONE"]
     depends_on:
       migrate:
         condition: service_completed_successfully
-    restart: "no"
     networks: [navigator]
 
   core-api:
     <<: *core-image
     environment: *core-env
     depends_on: *core-depends-on
-    # Порт наружу нужен только разработчику — для /docs и curl. Само
-    # мини-приложение обращается к API через прокси dev-сервера по docker-сети
-    # и от этой публикации не зависит.
+    # Порт наружу нужен только разработчику — для /docs и curl. Наружу API
+    # выносит nginx, и от этой публикации это не зависит.
     #
     # По умолчанию 8010, а не 8000: восьмитысячный занят на машине разработчика
     # чаще любого другого (им пользуются почти все локальные веб-фреймворки), а
@@ -148,6 +252,11 @@ services:
     environment: *core-env
     depends_on: *core-depends-on
     healthcheck:
+      # Проба из образа core стучится в HTTP на 8000, которого у celery нет,
+      # поэтому воркер вечно висел бы unhealthy. Не косметика: пока в `ps`
+      # половина сервисов красная всегда, по ней нельзя заметить настоящую
+      # поломку. Здесь спрашиваем сам celery.
+      #
       # CMD-SHELL, а не CMD: имя воркера складывается из $HOSTNAME контейнера,
       # а в exec-форме подстановки переменных не происходит.
       test:
@@ -157,7 +266,7 @@ services:
         ]
       interval: 30s
       timeout: 10s
-      start_period: 30s
+      start_period: 40s
       retries: 3
     networks: [navigator]
 
@@ -175,6 +284,11 @@ services:
         "--schedule=/tmp/celerybeat-schedule",
       ]
     environment: *core-env
+    # Планировщик ничего не слушает и никому не отвечает — спрашивать его
+    # нечем. Унаследованная от core проба врала бы, поэтому снята: пусть
+    # состояние будет «без пробы», а не «сломан».
+    healthcheck:
+      test: ["NONE"]
     depends_on: *core-depends-on
     networks: [navigator]
 
@@ -182,7 +296,8 @@ services:
     <<: *core-image
     # Отдельное приложение и отдельный процесс (уточнение У26, тех. ТЗ 9.4).
     # Порт только на localhost: в очереди лежат тексты обращений пользователей,
-    # и наружу её публиковать незачем.
+    # и наружу её публиковать незачем: доступ к ней — через ssh-туннель на
+    # 127.0.0.1:8001, отдельного сайта в nginx для неё нет.
     command:
       [
         "uvicorn",
@@ -194,15 +309,31 @@ services:
         "8001",
       ]
     environment: *core-env
+    # Тот же образ, но порт другой — 8001 вместо 8000. Унаследованная проба
+    # ходила не туда.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).status == 200 else 1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
     depends_on: *core-depends-on
     ports:
       - "127.0.0.1:${ADMIN_PORT:-8001}:8001"
     networks: [navigator]
 
   ai-gateway:
+    image: ${IMAGE_AI:-ghcr.io/danil-prog-coder/max_mini_app/ai-gateway}:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: apps/ai-gateway/Dockerfile
+    restart: unless-stopped
     # Портов наружу нет: сервис внутренний (тех. ТЗ 5). Изнутри доступен как
     # http://ai-gateway:8100, проверить — `docker compose exec core-api python -c ...`.
     environment:
@@ -222,14 +353,24 @@ services:
     networks: [navigator]
 
   miniapp:
-    # Профиль, а не обычный сервис: по умолчанию фронтенд в docker не
-    # поднимается. Причина в том, что dev-сервер Vite внутри контейнера
-    # выигрывает только у того, у кого нет node — а платит за это все:
-    # пересборка образа на каждое изменение зависимостей и HMR через
-    # смонтированный том, который на Windows и macOS заметно медленнее.
-    # Бэкенд из docker плюс `pnpm --filter miniapp dev` на хосте — рабочий
-    # режим по умолчанию; `docker compose --profile frontend up` возвращает
-    # прежнее поведение.
+    # Статика, собранная и отданная nginx внутри образа. Портов наружу нет:
+    # наружу её выносит nginx-точка входа.
+    image: ${IMAGE_MINIAPP:-ghcr.io/danil-prog-coder/max_mini_app/miniapp}:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: apps/miniapp/Dockerfile
+      target: production
+    restart: unless-stopped
+    networks: [navigator]
+
+  miniapp-dev:
+    # Профиль, а не обычный сервис: по умолчанию dev-сервер не поднимается.
+    # Причина в том, что Vite внутри контейнера выигрывает только у того, у
+    # кого нет node — а платит за это все: пересборка образа на каждое
+    # изменение зависимостей и HMR через смонтированный том, который на
+    # Windows и macOS заметно медленнее. Бэкенд из docker плюс
+    # `pnpm --filter miniapp dev` на хосте — рабочий режим по умолчанию;
+    # `docker compose --profile frontend up` возвращает прежнее поведение.
     profiles: [frontend]
     build:
       context: .
