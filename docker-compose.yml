@@ -195,22 +195,22 @@ services:
       retries: 10
     networks: [navigator]
 
-  migrate:
-    <<: *core-image
-    # Разовый шаг: приводит схему к состоянию моделей и завершается. Отдельным
-    # сервисом, а не в entrypoint приложения, чтобы миграции выполнялись один
-    # раз, а не в каждом контейнере при масштабировании.
-    command: ["aerich", "upgrade"]
-    environment: *core-env
-    restart: "no"
-    # Разовое задание: отработало и вышло, пробовать нечего. Унаследованная
-    # от core проба стучалась бы в несуществующий HTTP.
-    healthcheck:
-      test: ["NONE"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks: [navigator]
+#  migrate:
+#    <<: *core-image
+#    # Разовый шаг: приводит схему к состоянию моделей и завершается. Отдельным
+#    # сервисом, а не в entrypoint приложения, чтобы миграции выполнялись один
+#    # раз, а не в каждом контейнере при масштабировании.
+#    command: ["aerich", "upgrade"]
+#    environment: *core-env
+#    restart: "no"
+#    # Разовое задание: отработало и вышло, пробовать нечего. Унаследованная
+#    # от core проба стучалась бы в несуществующий HTTP.
+#    healthcheck:
+#      test: ["NONE"]
+#    depends_on:
+#      postgres:
+#        condition: service_healthy
+#    networks: [navigator]
 
   seed:
     <<: *core-image
@@ -353,6 +353,8 @@ services:
     networks: [navigator]
 
   miniapp:
+    ports:
+      - "127.0.0.1:8080:80"
     # Статика, собранная и отданная nginx внутри образа. Портов наружу нет:
     # наружу её выносит nginx-точка входа.
     image: ${IMAGE_MINIAPP:-ghcr.io/danil-prog-coder/max_mini_app/miniapp}:${IMAGE_TAG:-latest}
