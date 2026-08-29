@@ -68,91 +68,91 @@ x-core-env: &core-env
   CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
 
 services:
-  nginx:
-    # Официальный образ без своей сборки: ничего, кроме конфига и пары
-    # сертификат/ключ, ему не нужно.
-    image: nginx:1-alpine
-    restart: unless-stopped
-    # Единственный сервис с портами наружу.
-    ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
-    environment:
-      # Открытая часть (сертификат с цепочкой) и закрытый ключ. Оба — PEM,
-      # можно как есть, можно в base64: скрипт ниже разбирает оба вида.
-      # В репозиторий не попадают и в секреты GitHub не кладутся — живут
-      # только в `.env` на сервере (решение Р76).
-      TLS_CERT: ${TLS_CERT:-}
-      TLS_KEY: ${TLS_KEY:-}
-      # Нужен только для самоподписанного сертификата локально: в конфиге
-      # стоит `server_name _`, и домен ему безразличен.
-      DOMAIN: ${DOMAIN:-localhost}
-    volumes:
-      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-    # Каталог с ключом — в памяти, а не на диске: копии закрытого ключа
-    # незачем оседать в слое контейнера.
-    tmpfs:
-      - /etc/nginx/certs:mode=700
-    # Сертификат и ключ приходят переменными окружения, а nginx умеет читать
-    # их только из файлов — это и есть весь перевод. Отдельного скрипта или
-    # своего образа ради пятнадцати строк не заводим.
-    command:
-      - /bin/sh
-      - -c
-      - |
-        set -e
-        certs=/etc/nginx/certs
-
-        # Значение либо PEM как есть, либо он же в base64.
-        write_pem() {
-          case "$$1" in
-            -----BEGIN*) printf '%s\n' "$$1" ;;
-            *)           printf '%s' "$$1" | base64 -d ;;
-          esac
-        }
-
-        if [ -n "$$TLS_CERT" ] && [ -n "$$TLS_KEY" ]; then
-          write_pem "$$TLS_CERT" > "$$certs/cert.pem"
-          write_pem "$$TLS_KEY"  > "$$certs/key.pem"
-        elif [ -n "$$TLS_CERT" ] || [ -n "$$TLS_KEY" ]; then
-          # Половина пары — почти всегда опечатка в имени переменной. Молча
-          # свалиться в самоподписанный сертификат здесь нельзя: снаружи это
-          # неотличимо от рабочего стенда, а внутри — сломанный вход.
-          echo "nginx: задана только одна половина пары TLS_CERT/TLS_KEY" >&2
-          exit 1
-        else
-          echo "nginx: TLS_CERT и TLS_KEY пусты, беру самоподписанный на $$DOMAIN." >&2
-          echo "nginx: это годится только локально. На стенде так быть не должно." >&2
-          # openssl в официальном образе не установлен: на время сборки его
-          # кладут во временную группу и удаляют (проверено по Dockerfile
-          # образа). Поэтому ставим на месте — ветка выполняется только
-          # локально, где сеть есть, и на стенде не выполняется никогда.
-          command -v openssl > /dev/null || apk add --no-cache openssl > /dev/null 2>&1 || {
-            echo "nginx: openssl не установлен и поставить не удалось." >&2
-            echo "nginx: задайте TLS_CERT и TLS_KEY в .env — см. .env.example." >&2
-            exit 1
-          }
-          openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
-            -subj "/CN=$$DOMAIN" \
-            -keyout "$$certs/key.pem" -out "$$certs/cert.pem" 2> /dev/null
-        fi
-
-        chmod 600 "$$certs/key.pem"
-        # Сертификат, ключ и их соответствие друг другу проверяет сам nginx:
-        # на негодной паре он не стартует и пишет, что именно не так.
-        exec nginx -g 'daemon off;'
-    depends_on:
-      - miniapp
-      - core-api
-    healthcheck:
-      # Отдельный путь на 80-м порту, до редиректа на https: проба не должна
-      # ходить сама к себе по TLS и спотыкаться о самоподписанный сертификат.
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/nginx-health"]
-      interval: 15s
-      timeout: 5s
-      start_period: 5s
-      retries: 3
-    networks: [navigator]
+#  nginx:
+#    # Официальный образ без своей сборки: ничего, кроме конфига и пары
+#    # сертификат/ключ, ему не нужно.
+#    image: nginx:1-alpine
+#    restart: unless-stopped
+#    # Единственный сервис с портами наружу.
+#    ports:
+#      - "${HTTP_PORT:-80}:80"
+#      - "${HTTPS_PORT:-443}:443"
+#    environment:
+#      # Открытая часть (сертификат с цепочкой) и закрытый ключ. Оба — PEM,
+#      # можно как есть, можно в base64: скрипт ниже разбирает оба вида.
+#      # В репозиторий не попадают и в секреты GitHub не кладутся — живут
+#      # только в `.env` на сервере (решение Р76).
+#      TLS_CERT: ${TLS_CERT:-}
+#      TLS_KEY: ${TLS_KEY:-}
+#      # Нужен только для самоподписанного сертификата локально: в конфиге
+#      # стоит `server_name _`, и домен ему безразличен.
+#      DOMAIN: ${DOMAIN:-localhost}
+#    volumes:
+#      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+#    # Каталог с ключом — в памяти, а не на диске: копии закрытого ключа
+#    # незачем оседать в слое контейнера.
+#    tmpfs:
+#      - /etc/nginx/certs:mode=700
+#    # Сертификат и ключ приходят переменными окружения, а nginx умеет читать
+#    # их только из файлов — это и есть весь перевод. Отдельного скрипта или
+#    # своего образа ради пятнадцати строк не заводим.
+#    command:
+#      - /bin/sh
+#      - -c
+#      - |
+#        set -e
+#        certs=/etc/nginx/certs
+#
+#        # Значение либо PEM как есть, либо он же в base64.
+#        write_pem() {
+#          case "$$1" in
+#            -----BEGIN*) printf '%s\n' "$$1" ;;
+#            *)           printf '%s' "$$1" | base64 -d ;;
+#          esac
+#        }
+#
+#        if [ -n "$$TLS_CERT" ] && [ -n "$$TLS_KEY" ]; then
+#          write_pem "$$TLS_CERT" > "$$certs/cert.pem"
+#          write_pem "$$TLS_KEY"  > "$$certs/key.pem"
+#        elif [ -n "$$TLS_CERT" ] || [ -n "$$TLS_KEY" ]; then
+#          # Половина пары — почти всегда опечатка в имени переменной. Молча
+#          # свалиться в самоподписанный сертификат здесь нельзя: снаружи это
+#          # неотличимо от рабочего стенда, а внутри — сломанный вход.
+#          echo "nginx: задана только одна половина пары TLS_CERT/TLS_KEY" >&2
+#          exit 1
+#        else
+#          echo "nginx: TLS_CERT и TLS_KEY пусты, беру самоподписанный на $$DOMAIN." >&2
+#          echo "nginx: это годится только локально. На стенде так быть не должно." >&2
+#          # openssl в официальном образе не установлен: на время сборки его
+#          # кладут во временную группу и удаляют (проверено по Dockerfile
+#          # образа). Поэтому ставим на месте — ветка выполняется только
+#          # локально, где сеть есть, и на стенде не выполняется никогда.
+#          command -v openssl > /dev/null || apk add --no-cache openssl > /dev/null 2>&1 || {
+#            echo "nginx: openssl не установлен и поставить не удалось." >&2
+#            echo "nginx: задайте TLS_CERT и TLS_KEY в .env — см. .env.example." >&2
+#            exit 1
+#          }
+#          openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+#            -subj "/CN=$$DOMAIN" \
+#            -keyout "$$certs/key.pem" -out "$$certs/cert.pem" 2> /dev/null
+#        fi
+#
+#        chmod 600 "$$certs/key.pem"
+#        # Сертификат, ключ и их соответствие друг другу проверяет сам nginx:
+#        # на негодной паре он не стартует и пишет, что именно не так.
+#        exec nginx -g 'daemon off;'
+#    depends_on:
+#      - miniapp
+#      - core-api
+#    healthcheck:
+#      # Отдельный путь на 80-м порту, до редиректа на https: проба не должна
+#      # ходить сама к себе по TLS и спотыкаться о самоподписанный сертификат.
+#      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/nginx-health"]
+#      interval: 15s
+#      timeout: 5s
+#      start_period: 5s
+#      retries: 3
+#    networks: [navigator]
 
   postgres:
     image: postgres:16-alpine
