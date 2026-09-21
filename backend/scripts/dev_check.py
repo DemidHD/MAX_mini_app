@@ -1,0 +1,238 @@
+"""Ручная проверка этапов 0-1 на поднятом приложении.
+
+Скрипт собирает initData тем же алгоритмом, что и клиент MAX, подписывает её
+токеном из окружения и прогоняет основной маршрут авторизации. Тестового
+пользователя после прогона удаляет.
+
+Запуск:
+    docker compose exec backend python scripts/dev_check.py
+
+Вывести подписанную initData, чтобы вручную подёргать эндпоинты в /docs:
+    docker compose exec backend python scripts/dev_check.py --init-data
+
+Токен бота нигде не печатается.
+"""
+
+import argparse
+import asyncio
+import hmac
+import json
+import sys
+from datetime import datetime, timezone
+from hashlib import sha256
+from urllib.parse import quote
+
+from pathlib import Path
+
+import asyncpg
+import httpx
+
+# Скрипт запускается как файл, поэтому корень проекта нужно добавить руками
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.core.config import settings  # noqa: E402
+
+BASE_URL = "http://localhost:8000"
+PROBE_USER_ID = 999000001
+
+PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+    b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+JPEG_BYTES = b"\xff\xd8\xff\xe0\x00\x10JFIF" + b"\x00" * 64 + b"\xff\xd9"
+
+passed = 0
+failed = 0
+
+
+def check(title: str, condition: bool, details: str = "") -> None:
+    global passed, failed
+    if condition:
+        passed += 1
+        print(f"  [ OK ] {title}{f' — {details}' if details else ''}")
+    else:
+        failed += 1
+        print(f"  [ FAIL ] {title}{f' — {details}' if details else ''}")
+
+
+def build_init_data(first_name: str = "Проверочный") -> str:
+    """Собирает и подписывает initData по алгоритму MAX."""
+    if not settings.max_bot_token:
+        sys.exit("MAX_BOT_TOKEN не задан в .env — подписать initData нечем")
+
+    params = {
+        "auth_date": str(int(datetime.now(timezone.utc).timestamp())),
+        "chat": json.dumps({"id": 12345, "type": "DIALOG"}, separators=(",", ":")),
+        "ip": "192.168.0.1",
+        "query_id": "4c0ab423-342b-4e45-aea4-2747dbc500cd",
+        "user": json.dumps(
+            {
+                "id": PROBE_USER_ID,
+                "first_name": first_name,
+                "last_name": "Пользователь",
+                "username": "probe",
+                "language_code": "ru",
+                "photo_url": None,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    }
+    launch_params = "\n".join(f"{key}={value}" for key, value in sorted(params.items()))
+    secret_key = hmac.new(b"WebAppData", settings.max_bot_token.encode(), sha256).digest()
+    signature = hmac.new(secret_key, launch_params.encode(), sha256).hexdigest()
+    encoded = "&".join(f"{key}={quote(value, safe='')}" for key, value in params.items())
+    return f"{encoded}&hash={signature}"
+
+
+async def cleanup() -> None:
+    """Убирает проверочного пользователя из базы разработки."""
+    connection = await asyncpg.connect(settings.database_url)
+    try:
+        for table in ("sessions", "analytics_events", "users"):
+            column = "user_id"
+            await connection.execute(f"DELETE FROM {table} WHERE {column} = $1", PROBE_USER_ID)
+    finally:
+        await connection.close()
+
+
+async def run() -> None:
+    init_data = build_init_data()
+
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
+        print("\nЗдоровье сервиса")
+        health = await client.get("/health")
+        check("GET /health отвечает 200 без сессии", health.status_code == 200, health.text)
+
+        print("\nАвторизация (раздел 6-7)")
+        login = await client.post("/api/auth/max", json={"init_data": init_data})
+        check("вход с подписанной initData", login.status_code == 200, f"код {login.status_code}")
+        if login.status_code != 200:
+            print(login.text)
+            return
+
+        body = login.json()
+        cookie = login.cookies.get(settings.session_cookie_name)
+        jar = {settings.session_cookie_name: cookie}
+        check("роль нового пользователя пустая", body["user"]["role"] is None)
+        check("current_step = role_selection", body["current_step"] == "role_selection")
+        check("сессионная cookie выдана", bool(cookie))
+        check(
+            "cookie помечена HttpOnly",
+            "httponly" in login.headers.get("set-cookie", "").lower(),
+        )
+
+        broken = init_data[:-1] + ("0" if init_data[-1] != "0" else "1")
+        bad = await client.post("/api/auth/max", json={"init_data": broken})
+        check("подделанная подпись отклонена 401", bad.status_code == 401, bad.json()["error"]["code"])
+
+        # Отдельный клиент: у основного cookie уже сохранена после входа
+        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as anonymous:
+            no_session = await anonymous.get("/api/users/me")
+        check("запрос без сессии отклонён 401", no_session.status_code == 401)
+
+        print("\nПользователь и роль (разделы 8-9)")
+        me = await client.get("/api/users/me", cookies=jar)
+        check("GET /users/me отдаёт профиль", me.status_code == 200 and me.json()["user_id"] == PROBE_USER_ID)
+
+        role = await client.patch("/api/users/me/role", json={"role": "employer"}, cookies=jar)
+        check("роль employer выбрана", role.status_code == 200 and role.json()["role"] == "employer")
+
+        wrong_role = await client.patch("/api/users/me/role", json={"role": "admin"}, cookies=jar)
+        check("недопустимая роль отклонена 422", wrong_role.status_code == 422)
+
+        profile = await client.patch(
+            "/api/users/me/profile", json={"first_name": "Алексей"}, cookies=jar
+        )
+        check("имя изменено", profile.status_code == 200 and profile.json()["first_name"] == "Алексей")
+
+        empty_name = await client.patch(
+            "/api/users/me/profile", json={"first_name": "   "}, cookies=jar
+        )
+        check("пустое имя отклонено 422", empty_name.status_code == 422)
+
+        relogin = await client.post("/api/auth/max", json={"init_data": build_init_data()})
+        relogin_body = relogin.json()
+        check(
+            "повторный вход не затирает изменённое имя",
+            relogin_body["user"]["first_name"] == "Алексей",
+            f"MAX прислал «Проверочный», в базе «{relogin_body['user']['first_name']}»",
+        )
+        check(
+            "current_step учитывает состояние",
+            relogin_body["current_step"] == "vacancy_create",
+            relogin_body["current_step"],
+        )
+
+        print("\nАватарка (раздел 27)")
+        missing = await client.get("/api/users/me/avatar", cookies=jar)
+        check("без аватарки отдаётся 404", missing.status_code == 404)
+
+        upload = await client.patch(
+            "/api/users/me/avatar",
+            files={"file": ("avatar.png", PNG_BYTES, "image/png")},
+            cookies=jar,
+        )
+        check("аватарка установлена", upload.status_code == 200 and upload.json()["has_avatar"])
+
+        download = await client.get("/api/users/me/avatar", cookies=jar)
+        check("аватарка отдаётся обратно", download.content == PNG_BYTES)
+
+        replaced = await client.patch(
+            "/api/users/me/avatar",
+            files={"file": ("avatar.jpg", JPEG_BYTES, "image/jpeg")},
+            cookies=jar,
+        )
+        check("аватарка заменена", replaced.status_code == 200)
+
+        fake = await client.patch(
+            "/api/users/me/avatar",
+            files={"file": ("avatar.png", b"#!/bin/sh\nrm -rf /", "image/png")},
+            cookies=jar,
+        )
+        check(
+            "скрипт под видом картинки отклонён 422",
+            fake.status_code == 422,
+            fake.json()["error"]["code"],
+        )
+
+        oversized = PNG_BYTES + b"\x00" * settings.avatar_max_size_bytes
+        too_big = await client.patch(
+            "/api/users/me/avatar",
+            files={"file": ("avatar.png", oversized, "image/png")},
+            cookies=jar,
+        )
+        check("слишком большой файл отклонён 422", too_big.status_code == 422)
+
+        removed = await client.delete("/api/users/me/avatar", cookies=jar)
+        check("аватарка удалена", removed.status_code == 204)
+
+        gone = await client.get("/api/users/me/avatar", cookies=jar)
+        check("после удаления снова 404", gone.status_code == 404)
+
+
+async def main() -> int:
+    parser = argparse.ArgumentParser(description="Проверка backend MAX Найм")
+    parser.add_argument(
+        "--init-data",
+        action="store_true",
+        help="вывести подписанную initData для ручных запросов в /docs",
+    )
+    args = parser.parse_args()
+
+    if args.init_data:
+        print(build_init_data())
+        return 0
+
+    try:
+        await run()
+    finally:
+        await cleanup()
+
+    print(f"\nИтог: успешно {passed}, провалено {failed}")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(asyncio.run(main()))
