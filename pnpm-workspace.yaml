@@ -1,5 +1,0 @@
-# Пакеты монорепо на JavaScript/TypeScript.
-# Бэкенд-сервисы (apps/core, apps/ai-gateway) на Python и живут вне workspace,
-# у каждого свой pyproject.toml и uv.lock.
-packages:
-  - apps/miniapp
