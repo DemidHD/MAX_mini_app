@@ -1,0 +1,98 @@
+"""Бизнес-логика пользователя: профиль, роль, аватарка. Разделы 8, 9, 27."""
+
+import logging
+from pathlib import Path
+
+from app.analytics import service as analytics
+from app.core.database import utcnow
+from app.core.enums import UserRole
+from app.core.errors import NotFoundError
+from app.core.storage import (
+    delete_file,
+    detect_avatar_mime,
+    ensure_avatar_size,
+    resolve_stored_file,
+    save_avatar,
+)
+from app.users.models import User
+from app.users.schemas import ProfileUpdateRequest
+
+logger = logging.getLogger("app.users")
+
+
+async def update_profile(user: User, payload: ProfileUpdateRequest) -> User:
+    """Меняет имя и фамилию только текущего пользователя."""
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        return user
+
+    for field, value in changes.items():
+        setattr(user, field, value)
+    await user.save(update_fields=[*changes.keys(), "updated_at"])
+    return user
+
+
+async def select_role(user: User, role: UserRole) -> User:
+    """Назначает роль текущему пользователю (раздел 9).
+
+    Тех-дока не запрещает сменить уже выбранную роль, поэтому смена
+    разрешена; повторная установка той же роли ничего не меняет.
+    """
+    if user.role == role:
+        return user
+
+    previous_role = user.role
+    user.role = role
+    await user.save(update_fields=["role", "updated_at"])
+    await analytics.log_event(
+        "role_selected",
+        user_id=user.user_id,
+        payload={
+            "role": role.value,
+            "previous_role": previous_role.value if previous_role else None,
+        },
+    )
+    return user
+
+
+async def set_avatar(user: User, content: bytes) -> User:
+    """Устанавливает или заменяет аватарку.
+
+    Старый файл удаляется только после успешной записи нового (раздел 27).
+    """
+    ensure_avatar_size(len(content))
+    mime = detect_avatar_mime(content)
+
+    previous_path = user.avatar_path
+    new_path = save_avatar(user.user_id, content, mime)
+
+    user.avatar_path = str(new_path)
+    user.avatar_updated_at = utcnow()
+    await user.save(update_fields=["avatar_path", "avatar_updated_at", "updated_at"])
+
+    if previous_path and previous_path != str(new_path):
+        delete_file(previous_path)
+    return user
+
+
+async def delete_avatar(user: User) -> None:
+    """Удаляет файл и очищает поля. Отсутствие аватарки — не ошибка сценария."""
+    if not user.avatar_path:
+        raise NotFoundError("Аватарка не установлена", code="avatar_not_found")
+
+    delete_file(user.avatar_path)
+    user.avatar_path = None
+    user.avatar_updated_at = None
+    await user.save(update_fields=["avatar_path", "avatar_updated_at", "updated_at"])
+
+
+def get_avatar_file(user: User) -> Path:
+    """Путь к аватарке текущего пользователя.
+
+    Путь берётся из записи пользователя сессии, поэтому чужой файл получить
+    нельзя; дополнительно проверяется, что он лежит внутри хранилища.
+    """
+    path = resolve_stored_file(user.avatar_path)
+    if path is None:
+        raise NotFoundError("Аватарка не установлена", code="avatar_not_found")
+    return path
