@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: max_hiring_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-max_hiring}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-max_hiring}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-max_hiring} -d ${POSTGRES_DB:-max_hiring}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: max_hiring_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: UTC
+      STORAGE_ROOT: /app/storage
+    ports:
+      - "8000:8000"
+    volumes:
+      # dev-режим: код монтируется, чтобы работал reload и миграции писались на хост
+      - ./backend:/app
+      # persistent volume для файлов (аватарки, резюме) — раздел 3 тех-доки
+      - storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "aerich upgrade &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+volumes:
+  pgdata:
+  storage:

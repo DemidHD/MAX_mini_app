@@ -1,0 +1,30 @@
+# Secrets
+.env
+.env.local
+
+# Local file storage (persistent volume in Docker)
+storage/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Node (frontend)
+node_modules/
+dist/

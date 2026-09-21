@@ -1,0 +1,41 @@
+[project]
+name = "max-hiring-backend"
+version = "0.1.0"
+description = "MAX Найм — backend (FastAPI + Tortoise ORM + maxapi)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "tortoise-orm[asyncpg]>=0.22",
+    "aerich>=0.7.2",
+    "python-multipart>=0.0.12",
+    "maxapi[fastapi]>=1.2.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+]
+
+[tool.aerich]
+tortoise_orm = "app.core.database.TORTOISE_ORM"
+location = "./migrations"
+src_folder = "./."
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# Один event loop на сессию: соединение Tortoise живёт столько же, сколько тестовая БД
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
