@@ -34,6 +34,8 @@ from app.core.config import settings  # noqa: E402
 
 BASE_URL = "http://localhost:8000"
 PROBE_USER_ID = 999000001
+PROBE_CANDIDATE_ID = 999000002
+PROBE_VACANCY_TITLES = ("Проверочная подходящая", "Проверочная неподходящая")
 
 PNG_BYTES = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
@@ -56,7 +58,9 @@ def check(title: str, condition: bool, details: str = "") -> None:
         print(f"  [ FAIL ] {title}{f' — {details}' if details else ''}")
 
 
-def build_init_data(first_name: str = "Проверочный") -> str:
+def build_init_data(
+    first_name: str = "Проверочный", user_id: int = PROBE_USER_ID
+) -> str:
     """Собирает и подписывает initData по алгоритму MAX."""
     if not settings.max_bot_token:
         sys.exit("MAX_BOT_TOKEN не задан в .env — подписать initData нечем")
@@ -68,7 +72,7 @@ def build_init_data(first_name: str = "Проверочный") -> str:
         "query_id": "4c0ab423-342b-4e45-aea4-2747dbc500cd",
         "user": json.dumps(
             {
-                "id": PROBE_USER_ID,
+                "id": user_id,
                 "first_name": first_name,
                 "last_name": "Пользователь",
                 "username": "probe",
@@ -86,13 +90,63 @@ def build_init_data(first_name: str = "Проверочный") -> str:
     return f"{encoded}&hash={signature}"
 
 
-async def cleanup() -> None:
-    """Убирает проверочного пользователя из базы разработки."""
+async def seed_feed_fixtures() -> None:
+    """Готовит данные для ленты напрямую в БД.
+
+    Профиль кандидата и вакансии заводятся SQL-ом, потому что эндпоинтов
+    профиля (этап 2) и вакансий (зона другого разработчика) ещё нет.
+    """
     connection = await asyncpg.connect(settings.database_url)
     try:
-        for table in ("sessions", "analytics_events", "users"):
-            column = "user_id"
-            await connection.execute(f"DELETE FROM {table} WHERE {column} = $1", PROBE_USER_ID)
+        await connection.execute(
+            """
+            INSERT INTO candidate_profiles
+                (user_id, desired_role, city, salary, schedule, experience_months,
+                 available_from, created_at, updated_at)
+            VALUES ($1, 'Бариста', 'Москва', 70000, 'full_time', 24, DATE '2026-10-01',
+                    NOW(), NOW())
+            ON CONFLICT (user_id) DO NOTHING
+            """,
+            PROBE_CANDIDATE_ID,
+        )
+        for title, city in zip(PROBE_VACANCY_TITLES, ("Москва", "Казань")):
+            vacancy_id = await connection.fetchval(
+                """
+                INSERT INTO vacancies
+                    (employer_id, title, location, salary_max, schedule, status,
+                     created_at, updated_at)
+                VALUES ($1, $2, $3, 90000, 'full_time', 'published', NOW(), NOW())
+                RETURNING id
+                """,
+                PROBE_USER_ID,
+                title,
+                city,
+            )
+            await connection.execute(
+                """
+                INSERT INTO vacancy_criteria (vacancy_id, type, required, value, created_at)
+                VALUES ($1, 'location', TRUE, $2::jsonb, NOW())
+                """,
+                vacancy_id,
+                json.dumps({"city": city}),
+            )
+    finally:
+        await connection.close()
+
+
+async def cleanup() -> None:
+    """Убирает проверочные данные из базы разработки."""
+    connection = await asyncpg.connect(settings.database_url)
+    try:
+        await connection.execute(
+            "DELETE FROM vacancies WHERE employer_id = ANY($1::bigint[])",
+            [PROBE_USER_ID, PROBE_CANDIDATE_ID],
+        )
+        for table in ("sessions", "analytics_events", "candidate_profiles", "users"):
+            await connection.execute(
+                f"DELETE FROM {table} WHERE user_id = ANY($1::bigint[])",
+                [PROBE_USER_ID, PROBE_CANDIDATE_ID],
+            )
     finally:
         await connection.close()
 
@@ -210,6 +264,60 @@ async def run() -> None:
 
         gone = await client.get("/api/users/me/avatar", cookies=jar)
         check("после удаления снова 404", gone.status_code == 404)
+
+        print("\nЛента вакансий (раздел 30)")
+        forbidden = await client.get("/api/vacancies/feed", cookies=jar)
+        check(
+            "работодателю лента недоступна 403",
+            forbidden.status_code == 403,
+            forbidden.json()["error"]["code"],
+        )
+
+        candidate_login = await client.post(
+            "/api/auth/max",
+            json={"init_data": build_init_data(user_id=PROBE_CANDIDATE_ID)},
+        )
+        candidate_jar = {
+            settings.session_cookie_name: candidate_login.cookies.get(
+                settings.session_cookie_name
+            )
+        }
+        await client.patch(
+            "/api/users/me/role", json={"role": "candidate"}, cookies=candidate_jar
+        )
+
+        empty = await client.get("/api/vacancies/feed", cookies=candidate_jar)
+        check(
+            "без профиля лента пустая",
+            empty.status_code == 200 and empty.json()["items"] == [],
+        )
+
+        await seed_feed_fixtures()
+        feed = await client.get("/api/vacancies/feed", cookies=candidate_jar)
+        titles = [item["title"] for item in feed.json()["items"]]
+        check(
+            "подходящая вакансия в ленте",
+            PROBE_VACANCY_TITLES[0] in titles,
+            f"получено: {titles}",
+        )
+        check(
+            "вакансия с чужим городом отсеяна",
+            PROBE_VACANCY_TITLES[1] not in titles,
+        )
+        card = next(
+            (item for item in feed.json()["items"] if item["title"] == PROBE_VACANCY_TITLES[0]),
+            None,
+        )
+        check(
+            "в карточке видны условия вакансии",
+            bool(card and card["criteria"]),
+            str(card["criteria"]) if card else "карточка не найдена",
+        )
+
+        bad_paging = await client.get(
+            "/api/vacancies/feed", params={"limit": 500}, cookies=candidate_jar
+        )
+        check("некорректная пагинация отклонена 422", bad_paging.status_code == 422)
 
 
 async def main() -> int:

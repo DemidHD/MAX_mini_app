@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.core.database import TORTOISE_ORM
 from app.core.errors import register_exception_handlers
 from app.core.logging import RequestContextMiddleware, setup_logging
+from app.matching.router import router as feed_router
 from app.users.router import router as users_router
 
 logger = logging.getLogger("app.main")
@@ -48,6 +49,8 @@ register_exception_handlers(app)
 api_router = APIRouter(prefix="/api")
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
+# Раньше любого /vacancies/{id}, иначе feed уедет в параметр пути
+api_router.include_router(feed_router)
 app.include_router(api_router)
 
 
