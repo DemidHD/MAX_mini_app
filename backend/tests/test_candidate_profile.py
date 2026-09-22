@@ -1,5 +1,6 @@
 """GET/PATCH /api/candidate/profile. Разделы 14, 27 тех-доки."""
 
+import asyncio
 from datetime import date
 from decimal import Decimal
 
@@ -7,7 +8,9 @@ import pytest_asyncio
 from httpx import AsyncClient
 
 from app.applications.models import Application, ScreeningAnswer
+from app.candidates import service
 from app.candidates.models import CandidateProfile
+from app.candidates.schemas import CandidateProfileUpdateRequest
 from app.core.enums import (
     ApplicationStatus,
     CriterionType,
@@ -271,3 +274,44 @@ async def test_filled_profile_opens_feed(client: AsyncClient) -> None:
     feed = await client.get("/api/vacancies/feed")
     assert feed.status_code == 200
     assert "Бариста в центре" in [item["title"] for item in feed.json()["items"]]
+
+
+async def test_concurrent_creation_makes_one_profile(client: AsyncClient) -> None:
+    """Параллельные первые сохранения не должны падать и плодить профили.
+
+    Такая же гонка однажды была в первой авторизации (`_upsert_user`).
+    """
+    await _login(client, 750014, UserRole.CANDIDATE)
+
+    responses = await asyncio.gather(
+        *[
+            client.patch("/api/candidate/profile", json=FULL_PROFILE)
+            for _ in range(5)
+        ]
+    )
+
+    assert [response.status_code for response in responses] == [200] * 5
+    assert await CandidateProfile.filter(user_id=750014).count() == 1
+
+
+async def test_profile_created_between_read_and_insert_is_reused(
+    client: AsyncClient,
+) -> None:
+    """Состояние проигравшего гонку: профиль появился после чтения, до вставки.
+
+    Воспроизвести это через HTTP нельзя — вызываем ту же ветку сервиса
+    напрямую, чтобы вставка гарантированно наткнулась на существующую запись.
+    """
+    user = await _login(client, 750015, UserRole.CANDIDATE)
+    await CandidateProfile.create(
+        user_id=user.user_id, desired_role="Бариста", city="Москва"
+    )
+
+    payload = CandidateProfileUpdateRequest(desired_role="Официант")
+    profile = await service._create_profile(
+        user, payload.model_dump(exclude_unset=True)
+    )
+
+    assert profile.desired_role == "Официант"
+    assert profile.city == "Москва"
+    assert await CandidateProfile.filter(user_id=user.user_id).count() == 1

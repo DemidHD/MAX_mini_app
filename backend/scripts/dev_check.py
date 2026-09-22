@@ -399,6 +399,12 @@ async def run() -> None:
             str(card["criteria"]) if card else "карточка не найдена",
         )
 
+        check(
+            "лента сообщает, есть ли ещё вакансии",
+            "has_more" in feed.json() and feed.json()["has_more"] is False,
+            str(feed.json().get("has_more")),
+        )
+
         bad_paging = await client.get(
             "/api/vacancies/feed", params={"limit": 500}, cookies=candidate_jar
         )
