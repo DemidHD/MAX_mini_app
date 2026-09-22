@@ -12,6 +12,9 @@ dependencies = [
     "aerich>=0.7.2",
     "python-multipart>=0.0.12",
     "maxapi[fastapi]>=1.2.2",
+    # В Windows нет системной базы часовых поясов, а Tortoise с use_tz=True
+    # просит у zoneinfo зону UTC. В Linux-образе она есть в самой системе.
+    "tzdata>=2024.1; sys_platform == 'win32'",
 ]
 
 [dependency-groups]

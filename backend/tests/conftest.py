@@ -6,6 +6,9 @@
 Подключение к БД поднимается тем же lifespan, что и в бою, причём в отдельной
 задаче — иначе тесты не заметят, что контекст Tortoise не виден обработчикам
 запросов, как это было с голым `Tortoise.init()`.
+
+DSN берётся из TEST_DATABASE_URL, если он задан: DATABASE_URL указывает на хост
+`postgres` из сети Docker, и с машины разработчика это имя не резолвится.
 """
 
 import asyncio
@@ -25,7 +28,7 @@ from app.core.database import TORTOISE_ORM
 from app.main import app, lifespan
 from tests.factories import TEST_BOT_TOKEN
 
-_DEV_DSN: str = TORTOISE_ORM["connections"]["default"]
+_DEV_DSN: str = settings.test_database_url or TORTOISE_ORM["connections"]["default"]
 _TEST_DB_NAME = f"{urlparse(_DEV_DSN).path.lstrip('/')}_test"
 
 
