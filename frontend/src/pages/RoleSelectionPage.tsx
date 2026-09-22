@@ -1,16 +1,21 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Button, Flex, Typography } from '@maxhub/max-ui'
+import { Spinner, Typography } from '@maxhub/max-ui'
 
 import { pathForStep } from '@/app/routes'
 import { updateRole } from '@/api/users'
 import { ApiError } from '@/api/client'
+import { SplashScreen } from '@/components/SplashScreen'
 import { useAuth } from '@/auth/AuthContext'
 import type { UserRole } from '@/api/types'
+import employerPhoto from '@/assets/role-employer.webp'
+import candidatePhoto from '@/assets/role-candidate.webp'
+import './RoleSelectionPage.css'
 
 /**
- * Экран выбора роли (раздел 9 тех-доки). Роль нельзя выбрать повторно —
- * если backend уже вернул ненулевую роль, уводим на актуальный шаг.
+ * Экран выбора роли (раздел 9 тех-доки, экран G02 в UX-карте). Роль нельзя
+ * выбрать повторно — если backend уже вернул ненулевую роль, уводим на
+ * актуальный шаг.
  */
 export function RoleSelectionPage() {
   const { state, refresh } = useAuth()
@@ -18,7 +23,9 @@ export function RoleSelectionPage() {
   const [error, setError] = useState<string | null>(null)
 
   if (state.status !== 'authenticated') {
-    return null
+    // После отправки роли refresh() ненадолго переводит статус обратно в
+    // 'loading' — показываем тот же экран G01, а не пустой экран.
+    return <SplashScreen />
   }
 
   if (state.user.role !== null) {
@@ -39,36 +46,115 @@ export function RoleSelectionPage() {
     }
   }
 
+  const isBusy = submitting !== null
+
   return (
-    <Flex direction="column" gap={24} style={{ padding: 24, minHeight: '100vh' }} justify="center">
-      <Flex direction="column" gap={8}>
-        <Typography.Title>Кто вы в MAX Найм?</Typography.Title>
-        <Typography.Body>Это определяет, какой сценарий вы увидите дальше.</Typography.Body>
-      </Flex>
+    <div className="roleScreen">
+      <div className="roleScreen__brand">
+        <span className="roleScreen__brandMax">MAX</span>
+        <span className="roleScreen__brandName">Найм</span>
+      </div>
 
-      <Flex direction="column" gap={12}>
-        <Button
-          size="large"
-          stretched
-          loading={submitting === 'employer'}
-          disabled={submitting !== null}
-          onClick={() => void handleSelect('employer')}
-        >
-          Я ищу сотрудника
-        </Button>
-        <Button
-          size="large"
-          variant="secondary"
-          stretched
-          loading={submitting === 'candidate'}
-          disabled={submitting !== null}
-          onClick={() => void handleSelect('candidate')}
-        >
-          Я ищу работу
-        </Button>
-      </Flex>
+      <div className="roleScreen__heading">
+        <Typography.Display asChild>
+          <span className="roleScreen__title">
+            Что будем
+            <br />
+            делать?
+          </span>
+        </Typography.Display>
+        <Typography.Body className="roleScreen__subtitle">Выберите свой сценарий</Typography.Body>
+      </div>
 
-      {error ? <Typography.Body>{error}</Typography.Body> : null}
-    </Flex>
+      <div className="roleScreen__cards">
+        <RoleCard
+          variant="employer"
+          title={['Найти', 'сотрудника']}
+          description="Разместить вакансию и выбрать кандидата"
+          photo={employerPhoto}
+          busy={submitting === 'employer'}
+          inactive={isBusy && submitting !== 'employer'}
+          onSelect={() => void handleSelect('employer')}
+        />
+        <RoleCard
+          variant="candidate"
+          title={['Ищу', 'работу']}
+          description="Смотреть вакансии и откликаться"
+          photo={candidatePhoto}
+          busy={submitting === 'candidate'}
+          inactive={isBusy && submitting !== 'candidate'}
+          onSelect={() => void handleSelect('candidate')}
+        />
+      </div>
+
+      <Typography.Body className="roleScreen__footnote">Роль можно изменить позже</Typography.Body>
+      {error ? <Typography.Body className="roleScreen__error">{error}</Typography.Body> : null}
+    </div>
+  )
+}
+
+function RoleCard({
+  variant,
+  title,
+  description,
+  photo,
+  busy,
+  inactive,
+  onSelect,
+}: {
+  variant: 'employer' | 'candidate'
+  title: [string, string]
+  description: string
+  photo: string
+  busy: boolean
+  inactive: boolean
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={`roleCard roleCard--${variant}`}
+      data-busy={busy}
+      data-inactive={inactive}
+      disabled={busy || inactive}
+      onClick={onSelect}
+    >
+      <span className="roleCard__photoBox" aria-hidden="true">
+        <img className="roleCard__photo" src={photo} alt="" />
+      </span>
+
+      <span className="roleCard__arrow" aria-hidden="true">
+        <ArrowIcon />
+      </span>
+
+      <span className="roleCard__text">
+        <span className="roleCard__title">
+          {title[0]}
+          <br />
+          {title[1]}
+        </span>
+        <span className="roleCard__desc">{description}</span>
+      </span>
+
+      {busy ? (
+        <span className="roleCard__spinner">
+          <Spinner size={24} appearance={variant === 'employer' ? 'contrast' : 'primary'} />
+        </span>
+      ) : null}
+    </button>
+  )
+}
+
+function ArrowIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M4 10h12M11 5l5 5-5 5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }

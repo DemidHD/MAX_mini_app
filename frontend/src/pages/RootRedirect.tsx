@@ -3,19 +3,20 @@ import { Navigate } from 'react-router-dom'
 import { pathForStep } from '@/app/routes'
 import { useAuth } from '@/auth/AuthContext'
 import { ErrorState } from '@/components/ErrorState'
-import { LoadingState } from '@/components/LoadingState'
+import { SplashScreen } from '@/components/SplashScreen'
 import { MaxBridgeUnavailableError } from '@/bridge/maxBridge'
 
 /**
  * Точка входа Mini App. Ждёт результат `/auth/max` и уводит пользователя на
  * маршрут, соответствующий `current_step` (раздел 7 тех-доки), — экран
  * восстанавливается по серверному состоянию, а не всегда со старта.
+ * Загрузочный экран — G01 «Загрузка и авторизация» в UX-карте.
  */
 export function RootRedirect() {
   const { state, refresh } = useAuth()
 
   if (state.status === 'loading') {
-    return <LoadingState label="Открываем MAX Найм…" />
+    return <SplashScreen />
   }
 
   if (state.status === 'error') {

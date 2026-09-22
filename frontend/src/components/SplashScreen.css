@@ -1,0 +1,47 @@
+.splash {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 100vh;
+  padding: 0 24px 28px;
+  background-color: var(--button-primary, #007aff);
+  background-repeat: no-repeat;
+  background-position: top center;
+  background-size: cover;
+}
+
+.splash__status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.splash__pill {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 20px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 12px 24px rgba(0, 20, 60, 0.2);
+  /*
+   * Пилюля всегда белая независимо от темы устройства, а компоненты MAX UI
+   * внутри неё (Spinner, Typography) читают цвет из тем-зависимых токенов
+   * --text-primary / --gradients-loading-icon-*. В тёмной теме эти токены
+   * становятся белыми и текст/спиннер пропадают на белом фоне — фиксируем
+   * их светлыми значениями только внутри пилюли.
+   */
+  --text-primary: #060708;
+  --gradients-loading-icon-primary-transparent: rgba(6, 7, 8, 0);
+  --gradients-loading-icon-primary-filled: rgba(6, 7, 8, 0.84);
+  /* `color` сам по себе наследуется от родителя уже вычисленным значением,
+     var(--text-primary) выше по дереву этого не поправит — задаём явно. */
+  color: #060708;
+}
+
+.splash__caption {
+  color: rgba(255, 255, 255, 0.85);
+}
