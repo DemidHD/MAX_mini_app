@@ -4,7 +4,7 @@ import { Button, Flex, Input, Typography } from '@maxhub/max-ui'
 import { ApiError } from '@/api/client'
 import { updateProfile } from '@/api/users'
 import { AvatarEditor } from '@/components/AvatarEditor'
-import { useAuth } from '@/auth/AuthContext'
+import { useAuth } from '@/auth/useAuth'
 import type { User } from '@/api/types'
 
 const LANGUAGE_LABELS: Record<string, string> = {

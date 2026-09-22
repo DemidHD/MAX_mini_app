@@ -73,6 +73,23 @@ def test_schedule_match() -> None:
     assert _check(criterion, _profile())
 
 
+def test_schedule_list_is_supported() -> None:
+    criterion = _criterion(
+        CriterionType.SCHEDULE, {"schedules": ["full_time", "shift"]}
+    )
+    assert _check(criterion, _profile(schedule="shift"))
+
+
+def test_schedule_comparison_ignores_case_and_spaces() -> None:
+    criterion = _criterion(CriterionType.SCHEDULE, {"schedule": "Full_Time"})
+    assert _check(criterion, _profile(schedule=" full_time "))
+
+
+def test_schedule_missing_in_profile_is_not_checkable() -> None:
+    criterion = _criterion(CriterionType.SCHEDULE, {"schedule": "full_time"})
+    assert _check(criterion, _profile(schedule=None)) is None
+
+
 def test_schedule_mismatch() -> None:
     criterion = _criterion(CriterionType.SCHEDULE, {"schedule": "night_shift"})
     assert _check(criterion, _profile()) is False
@@ -91,15 +108,41 @@ def test_expectations_above_ceiling_fail() -> None:
     assert _check(criterion, _profile(salary=Decimal("75000"))) is False
 
 
+def test_expectations_equal_to_ceiling_pass() -> None:
+    """Граница включительно: ожидания вровень с потолком вакансии подходят."""
+    criterion = _criterion(CriterionType.SALARY, {"max": 75000})
+    assert _check(criterion, _profile(salary=Decimal("75000")))
+
+
 def test_salary_falls_back_to_vacancy_maximum() -> None:
     criterion = _criterion(CriterionType.SALARY, {})
     vacancy = _vacancy(salary_max=Decimal("50000"))
     assert _check(criterion, _profile(salary=Decimal("70000")), vacancy) is False
 
 
+def test_unreadable_ceiling_is_not_replaced_by_vacancy_salary() -> None:
+    """Нечитаемый потолок критерия — «проверить нечем», а не потолок вакансии."""
+    criterion = _criterion(CriterionType.SALARY, {"max": "шестьдесят"})
+    vacancy = _vacancy(salary_max=Decimal("90000"))
+
+    assert _check(criterion, _profile(salary=Decimal("70000")), vacancy) is None
+
+
+def test_ceiling_as_string_is_accepted() -> None:
+    criterion = _criterion(CriterionType.SALARY, {"max": "60000"})
+    assert _check(criterion, _profile(salary=Decimal("70000"))) is False
+
+
 def test_salary_without_expectations_is_not_checkable() -> None:
     criterion = _criterion(CriterionType.SALARY, {"max": 60000})
     assert _check(criterion, _profile(salary=None)) is None
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+def test_non_finite_salary_limit_is_not_checkable(value: str) -> None:
+    criterion = _criterion(CriterionType.SALARY, {"max": value})
+
+    assert _check(criterion, _profile(), _vacancy(salary_max=None)) is None
 
 
 # --- Дата выхода ---
@@ -115,6 +158,19 @@ def test_candidate_ready_too_late_fails() -> None:
     assert _check(criterion, _profile(available_from=date(2026, 10, 1))) is False
 
 
+def test_candidate_ready_exactly_on_deadline_passes() -> None:
+    criterion = _criterion(CriterionType.AVAILABLE_FROM, {"date": "2026-10-01"})
+    assert _check(criterion, _profile(available_from=date(2026, 10, 1)))
+
+
+def test_date_with_time_is_accepted() -> None:
+    criterion = _criterion(
+        CriterionType.AVAILABLE_FROM, {"date": "2026-09-25T10:00:00"}
+    )
+
+    assert _check(criterion, _profile(available_from=date(2026, 10, 1))) is False
+
+
 def test_broken_date_is_not_checkable() -> None:
     criterion = _criterion(CriterionType.AVAILABLE_FROM, {"date": "не дата"})
     assert _check(criterion, _profile()) is None
@@ -126,6 +182,38 @@ def test_broken_date_is_not_checkable() -> None:
 def test_sufficient_experience_passes() -> None:
     criterion = _criterion(CriterionType.EXPERIENCE, {"min_months": 12})
     assert _check(criterion, _profile(experience_months=24))
+
+
+def test_experience_exactly_at_minimum_passes() -> None:
+    criterion = _criterion(CriterionType.EXPERIENCE, {"min_months": 24})
+    assert _check(criterion, _profile(experience_months=24))
+
+
+def test_experience_missing_in_profile_is_not_checkable() -> None:
+    criterion = _criterion(CriterionType.EXPERIENCE, {"min_months": 12})
+    assert _check(criterion, _profile(experience_months=None)) is None
+
+
+def test_experience_as_string_or_round_float_is_accepted() -> None:
+    """Форма вакансии может прислать число строкой или с нулевой дробной частью."""
+    as_string = _criterion(CriterionType.EXPERIENCE, {"min_months": "36"})
+    as_float = _criterion(CriterionType.EXPERIENCE, {"min_months": 36.0})
+
+    assert _check(as_string, _profile(experience_months=24)) is False
+    assert _check(as_float, _profile(experience_months=24)) is False
+
+
+def test_boolean_experience_is_not_treated_as_one_month() -> None:
+    """`True` в поле «месяцев» означает сломанный критерий, а не «от одного месяца»."""
+    criterion = _criterion(CriterionType.EXPERIENCE, {"min_months": True})
+
+    assert _check(criterion, _profile(experience_months=6)) is None
+
+
+def test_unreadable_experience_is_not_checkable() -> None:
+    criterion = _criterion(CriterionType.EXPERIENCE, {"min_months": "много"})
+
+    assert _check(criterion, _profile(experience_months=6)) is None
 
 
 def test_insufficient_experience_fails() -> None:
@@ -186,3 +274,15 @@ def test_malformed_criterion_does_not_break_matching() -> None:
 def test_forbidden_attributes_are_absent_from_profile(field: str) -> None:
     """Раздел 31: запрещённых признаков нет ни в профиле, ни в подборе."""
     assert not hasattr(CandidateProfile, field)
+
+
+def test_criterion_types_are_limited_to_objective_ones() -> None:
+    """Подбор умеет считать только объективные условия из раздела 30."""
+    assert {criterion.value for criterion in CriterionType} == {
+        "location",
+        "schedule",
+        "salary",
+        "available_from",
+        "experience",
+        "certificate",
+    }

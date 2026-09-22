@@ -7,10 +7,17 @@ from typing import Annotated
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+# .env лежит в корне репозитория и читается по абсолютному пути: иначе значения
+# подхватывались бы только при запуске из корня, а из backend/ (pytest, uvicorn)
+# молча брались бы значения по умолчанию. В Docker файла нет — там env vars.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Более поздний файл переопределяет более ранний
+        env_file=(_REPO_ROOT / ".env", _BACKEND_ROOT / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -23,6 +30,9 @@ class Settings(BaseSettings):
 
     # --- База данных ---
     database_url: str = "postgres://max_hiring:change_me@postgres:5432/max_hiring"
+    # DSN для pytest. database_url указывает на хост `postgres` из сети Docker,
+    # с машины разработчика это имя не резолвится — тесты ходят на localhost.
+    test_database_url: str = ""
 
     # --- MAX ---
     # Проверка подписи initData и Bot API. Секрет живёт только на backend.
@@ -35,6 +45,9 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 720
     session_cookie_name: str = "max_hiring_session"
     auth_date_max_age_seconds: int = 86400
+    auth_rate_limit_requests: int = 120
+    auth_rate_limit_window_seconds: int = 60
+    session_cleanup_interval_seconds: int = 300
 
     # --- Локальное файловое хранилище ---
     storage_root: Path = Path("/app/storage")

@@ -32,10 +32,12 @@ class AppError(Exception):
         *,
         code: str | None = None,
         details: Any = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.message = message or self.message
         self.code = code or self.code
         self.details = details
+        self.headers = headers
         super().__init__(self.message)
 
 
@@ -71,22 +73,37 @@ class ValidationError(AppError):
     message = "Некорректные данные"
 
 
+class RateLimitError(AppError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "rate_limited"
+    message = "Слишком много запросов"
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__(
+            details={"retry_after_seconds": retry_after_seconds},
+            headers={"Retry-After": str(retry_after_seconds)},
+        )
+
+
 def _error_response(
     status_code: int,
     code: str,
     message: str,
     details: Any = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     payload: dict[str, Any] = {"error": {"code": code, "message": message}}
     if details is not None:
         payload["error"]["details"] = details
-    return JSONResponse(status_code=status_code, content=payload)
+    return JSONResponse(status_code=status_code, content=payload, headers=headers)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
-        return _error_response(exc.status_code, exc.code, exc.message, exc.details)
+        return _error_response(
+            exc.status_code, exc.code, exc.message, exc.details, exc.headers
+        )
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(

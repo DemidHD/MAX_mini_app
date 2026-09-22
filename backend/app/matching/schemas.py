@@ -1,10 +1,9 @@
 """Схемы ленты вакансий."""
 
-from decimal import Decimal
-
 from pydantic import BaseModel
 
 from app.core.enums import CriterionType
+from app.core.money import Money
 
 
 class FeedCriterion(BaseModel):
@@ -25,8 +24,8 @@ class FeedVacancy(BaseModel):
     id: int
     title: str
     location: str | None
-    salary_min: Decimal | None
-    salary_max: Decimal | None
+    salary_min: Money | None
+    salary_max: Money | None
     schedule: str | None
     criteria: list[FeedCriterion]
 
@@ -35,5 +34,5 @@ class FeedResponse(BaseModel):
     items: list[FeedVacancy]
     limit: int
     offset: int
-    # Сколько подходящих вакансий найдено всего в просмотренном окне
+    # Полное число подходящих опубликованных вакансий
     total: int
