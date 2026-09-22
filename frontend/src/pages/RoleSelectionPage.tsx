@@ -5,7 +5,7 @@ import { Button, Flex, Typography } from '@maxhub/max-ui'
 import { pathForStep } from '@/app/routes'
 import { updateRole } from '@/api/users'
 import { ApiError } from '@/api/client'
-import { useAuth } from '@/auth/AuthContext'
+import { useAuth } from '@/auth/useAuth'
 import type { UserRole } from '@/api/types'
 
 /**

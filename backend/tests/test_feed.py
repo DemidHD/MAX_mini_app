@@ -11,7 +11,7 @@ from tortoise import Tortoise
 from app.applications.models import Application
 from app.candidates.models import CandidateProfile
 from app.core.enums import ApplicationStatus, CriterionType, UserRole, VacancyStatus
-from app.matching import service
+from app.matching import service as matching_service
 from app.users.models import User
 from app.vacancies.models import Vacancy, VacancyCriterion
 from tests.factories import build_init_data, max_user_payload
@@ -179,6 +179,21 @@ async def test_salary_expectations_filter_vacancy_out(client: AsyncClient) -> No
     assert _titles(await _feed(client)) == []
 
 
+async def test_non_finite_salary_criterion_does_not_break_feed(
+    client: AsyncClient,
+) -> None:
+    await _login_candidate(client, 741014)
+    await _vacancy(
+        "Некорректный предел",
+        criteria=[(CriterionType.SALARY, {"max": "NaN"}, True)],
+        salary_max=None,
+    )
+
+    body = await _feed(client)
+
+    assert _titles(body) == ["Некорректный предел"]
+
+
 async def test_experience_and_date_are_applied(client: AsyncClient) -> None:
     await _login_candidate(
         client, 741008, experience_months=6, available_from=date(2026, 12, 1)
@@ -248,6 +263,26 @@ async def test_pagination(client: AsyncClient) -> None:
     assert first["total"] >= 3
     assert len(second["items"]) >= 1
     assert set(_titles(first)).isdisjoint(_titles(second))
+
+
+async def test_feed_scans_past_internal_batch(client: AsyncClient) -> None:
+    await _login_candidate(client, 741015, city="Москва")
+    await _vacancy("Старая подходящая")
+    for index in range(3):
+        await _vacancy(
+            f"Новая неподходящая {index}",
+            criteria=[(CriterionType.LOCATION, {"city": "Казань"}, True)],
+        )
+
+    original_batch_size = matching_service.FEED_SCAN_BATCH_SIZE
+    matching_service.FEED_SCAN_BATCH_SIZE = 2
+    try:
+        body = await _feed(client)
+    finally:
+        matching_service.FEED_SCAN_BATCH_SIZE = original_batch_size
+
+    assert _titles(body) == ["Старая подходящая"]
+    assert body["total"] == 1
 
 
 async def test_invalid_pagination_is_rejected(client: AsyncClient) -> None:

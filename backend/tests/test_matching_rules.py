@@ -138,6 +138,13 @@ def test_salary_without_expectations_is_not_checkable() -> None:
     assert _check(criterion, _profile(salary=None)) is None
 
 
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+def test_non_finite_salary_limit_is_not_checkable(value: str) -> None:
+    criterion = _criterion(CriterionType.SALARY, {"max": value})
+
+    assert _check(criterion, _profile(), _vacancy(salary_max=None)) is None
+
+
 # --- Дата выхода ---
 
 

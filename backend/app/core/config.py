@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 720
     session_cookie_name: str = "max_hiring_session"
     auth_date_max_age_seconds: int = 86400
+    auth_rate_limit_requests: int = 120
+    auth_rate_limit_window_seconds: int = 60
+    session_cleanup_interval_seconds: int = 300
 
     # --- Локальное файловое хранилище ---
     storage_root: Path = Path("/app/storage")

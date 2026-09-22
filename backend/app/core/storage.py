@@ -5,7 +5,9 @@
 """
 
 import logging
+import os
 from pathlib import Path
+from uuid import uuid4
 
 from app.core.config import settings
 from app.core.errors import ValidationError
@@ -67,8 +69,21 @@ def save_avatar(user_id: int, content: bytes, mime: str) -> Path:
     """
     directory = settings.avatars_dir / str(user_id)
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"avatar.{MIME_TO_EXTENSION[mime]}"
-    path.write_bytes(content)
+    token = uuid4().hex
+    path = directory / f"avatar-{token}.{MIME_TO_EXTENSION[mime]}"
+    temporary_path = directory / f".{token}.tmp"
+    try:
+        with temporary_path.open("xb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary_path.replace(path)
+    except BaseException:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            logger.exception("Не удалось удалить временный файл: %s", temporary_path)
+        raise
     return path
 
 
@@ -83,7 +98,12 @@ def delete_file(path: str | Path | None) -> None:
     except (ValueError, OSError):
         logger.warning("Попытка удалить файл вне хранилища")
         return
-    resolved.unlink(missing_ok=True)
+    try:
+        resolved.unlink(missing_ok=True)
+    except OSError:
+        # После фиксации нового состояния в БД старый файл уже недоступен через
+        # API. Ошибка очистки не должна откатывать успешную операцию БД.
+        logger.exception("Не удалось удалить файл из хранилища: %s", resolved)
 
 
 def resolve_stored_file(path: str | Path | None) -> Path | None:
