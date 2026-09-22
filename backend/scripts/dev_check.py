@@ -1,4 +1,4 @@
-"""Ручная проверка этапов 0-1 на поднятом приложении.
+"""Ручная проверка этапов 0-3 на поднятом приложении.
 
 Скрипт собирает initData тем же алгоритмом, что и клиент MAX, подписывает её
 токеном из окружения и прогоняет основной маршрут авторизации. Тестового
@@ -90,25 +90,15 @@ def build_init_data(
     return f"{encoded}&hash={signature}"
 
 
-async def seed_feed_fixtures() -> None:
-    """Готовит данные для ленты напрямую в БД.
+async def seed_vacancies() -> None:
+    """Готовит вакансии для ленты напрямую в БД.
 
-    Профиль кандидата и вакансии заводятся SQL-ом, потому что эндпоинтов
-    профиля (этап 2) и вакансий (зона другого разработчика) ещё нет.
+    Вакансии заводятся SQL-ом, потому что эндпоинтов их создания ещё нет:
+    это зона другого разработчика. Профиль кандидата, наоборот, создаётся
+    через API — он реализован (этап 2).
     """
     connection = await asyncpg.connect(settings.database_url)
     try:
-        await connection.execute(
-            """
-            INSERT INTO candidate_profiles
-                (user_id, desired_role, city, salary, schedule, experience_months,
-                 available_from, created_at, updated_at)
-            VALUES ($1, 'Бариста', 'Москва', 70000, 'full_time', 24, DATE '2026-10-01',
-                    NOW(), NOW())
-            ON CONFLICT (user_id) DO NOTHING
-            """,
-            PROBE_CANDIDATE_ID,
-        )
         for title, city in zip(PROBE_VACANCY_TITLES, ("Москва", "Казань")):
             vacancy_id = await connection.fetchval(
                 """
@@ -265,7 +255,7 @@ async def run() -> None:
         gone = await client.get("/api/users/me/avatar", cookies=jar)
         check("после удаления снова 404", gone.status_code == 404)
 
-        print("\nЛента вакансий (раздел 30)")
+        print("\nДоступ к ленте (раздел 30)")
         forbidden = await client.get("/api/vacancies/feed", cookies=jar)
         check(
             "работодателю лента недоступна 403",
@@ -292,7 +282,102 @@ async def run() -> None:
             empty.status_code == 200 and empty.json()["items"] == [],
         )
 
-        await seed_feed_fixtures()
+        print("\nПрофиль кандидата (разделы 14, 27)")
+        missing = await client.get("/api/candidate/profile", cookies=candidate_jar)
+        check(
+            "до создания профиля 404",
+            missing.status_code == 404,
+            missing.json()["error"]["code"],
+        )
+
+        no_role = await client.patch(
+            "/api/candidate/profile", json={"city": "Москва"}, cookies=candidate_jar
+        )
+        check(
+            "создание без желаемой должности отклонено 422",
+            no_role.status_code == 422,
+            no_role.json()["error"]["code"],
+        )
+
+        created = await client.patch(
+            "/api/candidate/profile",
+            json={
+                "desired_role": "Бариста",
+                "city": "Москва",
+                "salary": "70000",
+                "schedule": "full_time",
+                "experience_months": 24,
+                "available_from": "2026-10-01",
+            },
+            cookies=candidate_jar,
+        )
+        check(
+            "профиль создан через PATCH",
+            created.status_code == 200 and created.json()["desired_role"] == "Бариста",
+            created.text if created.status_code != 200 else "",
+        )
+        check(
+            "зарплата отдаётся в формате колонки",
+            created.status_code == 200 and created.json()["salary"] == "70000.00",
+            created.json().get("salary") if created.status_code == 200 else "",
+        )
+
+        stored = await client.get("/api/candidate/profile", cookies=candidate_jar)
+        check(
+            "GET возвращает сохранённый профиль",
+            stored.status_code == 200 and stored.json() == created.json(),
+        )
+
+        partial = await client.patch(
+            "/api/candidate/profile", json={"salary": "85000"}, cookies=candidate_jar
+        )
+        check(
+            "частичное изменение не трогает остальные поля",
+            partial.status_code == 200
+            and partial.json()["salary"] == "85000.00"
+            and partial.json()["city"] == "Москва",
+        )
+
+        cleared = await client.patch(
+            "/api/candidate/profile", json={"city": None}, cookies=candidate_jar
+        )
+        check(
+            "null очищает необязательное поле",
+            cleared.status_code == 200 and cleared.json()["city"] is None,
+        )
+
+        bad_salary = await client.patch(
+            "/api/candidate/profile", json={"salary": "-1"}, cookies=candidate_jar
+        )
+        check("отрицательная зарплата отклонена 422", bad_salary.status_code == 422)
+
+        foreign = await client.patch(
+            "/api/candidate/profile",
+            json={"desired_role": "Бариста", "user_id": PROBE_USER_ID},
+            cookies=candidate_jar,
+        )
+        check(
+            "user_id из тела запроса игнорируется",
+            foreign.status_code == 200
+            and foreign.json()["user_id"] == PROBE_CANDIDATE_ID,
+        )
+
+        employer_attempt = await client.get("/api/candidate/profile", cookies=jar)
+        check(
+            "работодателю профиль кандидата недоступен 403",
+            employer_attempt.status_code == 403,
+            employer_attempt.json()["error"]["code"],
+        )
+
+        # Профиль вернули в исходное состояние: лента ниже проверяется по городу
+        await client.patch(
+            "/api/candidate/profile",
+            json={"city": "Москва", "salary": "70000"},
+            cookies=candidate_jar,
+        )
+
+        print("\nЛента вакансий с профилем (раздел 30)")
+        await seed_vacancies()
         feed = await client.get("/api/vacancies/feed", cookies=candidate_jar)
         titles = [item["title"] for item in feed.json()["items"]]
         check(
@@ -312,6 +397,12 @@ async def run() -> None:
             "в карточке видны условия вакансии",
             bool(card and card["criteria"]),
             str(card["criteria"]) if card else "карточка не найдена",
+        )
+
+        check(
+            "total считает все подходящие вакансии",
+            feed.json()["total"] == len(feed.json()["items"]),
+            f"total={feed.json()['total']}, на странице {len(feed.json()['items'])}",
         )
 
         bad_paging = await client.get(

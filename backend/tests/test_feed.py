@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest_asyncio
 from httpx import AsyncClient
+from tortoise import Tortoise
 
 from app.applications.models import Application
 from app.candidates.models import CandidateProfile
@@ -289,3 +290,53 @@ async def test_invalid_pagination_is_rejected(client: AsyncClient) -> None:
     response = await client.get("/api/vacancies/feed", params={"limit": 500})
 
     assert response.status_code == 422
+
+
+async def test_unknown_criterion_type_does_not_break_feed(client: AsyncClient) -> None:
+    """Тип критерия вне `CriterionType` роняет чтение всей ленты, если его читать.
+
+    Такое значение может остаться в базе от более новой версии кода, поэтому
+    подбор просто не берёт его в расчёт.
+    """
+    await _login_candidate(client, 741020)
+    broken = await _vacancy("С неизвестным условием")
+    await Tortoise.get_connection("default").execute_query(
+        "INSERT INTO vacancy_criteria (vacancy_id, type, required, value, created_at)"
+        " VALUES ($1, 'education', TRUE, '{\"level\": \"higher\"}'::jsonb, NOW())",
+        [broken.id],
+    )
+    await _vacancy("Обычная")
+
+    assert set(_titles(await _feed(client))) == {"С неизвестным условием", "Обычная"}
+
+
+async def test_pages_do_not_overlap_for_equal_created_at(client: AsyncClient) -> None:
+    """Одинаковое время создания не должно перемешивать страницы."""
+    await _login_candidate(client, 741021)
+    employer = await _employer()
+    connection = Tortoise.get_connection("default")
+    for index in range(4):
+        await connection.execute_query(
+            "INSERT INTO vacancies (employer_id, title, status, created_at, updated_at)"
+            " VALUES ($1, $2, 'published', TIMESTAMPTZ '2026-09-01 10:00:00+00',"
+            " TIMESTAMPTZ '2026-09-01 10:00:00+00')",
+            [employer.user_id, f"Одновременная {index}"],
+        )
+
+    first = _titles(await _feed(client, limit=2))
+    second = _titles(await _feed(client, limit=2, offset=2))
+
+    assert len(set(first + second)) == 4
+
+
+async def test_total_counts_all_suitable_vacancies(client: AsyncClient) -> None:
+    """`total` — полное число подходящих вакансий, а не размер страницы."""
+    await _login_candidate(client, 741022)
+    for index in range(3):
+        await _vacancy(f"Вакансия {index}")
+
+    body = await _feed(client, limit=2)
+
+    assert len(body["items"]) == 2
+    assert body["total"] == 3
+    assert len(_titles(await _feed(client, limit=2, offset=2))) == 1

@@ -12,6 +12,7 @@ from fastapi import APIRouter, FastAPI
 from tortoise.contrib.fastapi import RegisterTortoise
 
 from app.auth.router import router as auth_router
+from app.candidates.router import router as candidate_router
 from app.core.config import settings
 from app.core.database import TORTOISE_ORM
 from app.core.errors import register_exception_handlers
@@ -49,6 +50,7 @@ register_exception_handlers(app)
 api_router = APIRouter(prefix="/api")
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
+api_router.include_router(candidate_router)
 # Раньше любого /vacancies/{id}, иначе feed уедет в параметр пути
 api_router.include_router(feed_router)
 app.include_router(api_router)

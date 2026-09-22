@@ -2,13 +2,15 @@
 
 import logging
 
+from tortoise.query_utils import Prefetch
+
 from app.applications.models import Application
 from app.candidates.models import CandidateProfile
-from app.core.enums import VacancyStatus
+from app.core.enums import CriterionType, VacancyStatus
 from app.matching.rules import evaluate_vacancy, matches_required_criteria
 from app.matching.schemas import FeedCriterion, FeedResponse, FeedVacancy
 from app.users.models import User
-from app.vacancies.models import Vacancy
+from app.vacancies.models import Vacancy, VacancyCriterion
 
 logger = logging.getLogger("app.matching")
 
@@ -51,7 +53,7 @@ async def get_feed(user: User, *, limit: int, offset: int) -> FeedResponse:
         vacancies = await (
             vacancies_query.offset(scanned)
             .limit(FEED_SCAN_BATCH_SIZE)
-            .prefetch_related("criteria")
+            .prefetch_related(_known_criteria())
         )
         if not vacancies:
             break
@@ -92,4 +94,18 @@ async def get_feed(user: User, *, limit: int, offset: int) -> FeedResponse:
         limit=limit,
         offset=offset,
         total=total,
+    )
+
+
+def _known_criteria() -> Prefetch:
+    """Читает только критерии известных типов.
+
+    Значение типа вне `CriterionType` (например, оставшееся от более новой
+    версии кода) иначе роняет чтение всей ленты, а не одну вакансию. Такой
+    критерий подбор всё равно проверить не может, поэтому вакансия остаётся
+    в ленте по общему правилу.
+    """
+    return Prefetch(
+        "criteria",
+        queryset=VacancyCriterion.filter(type__in=list(CriterionType)),
     )

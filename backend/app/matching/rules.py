@@ -9,7 +9,7 @@
 
     location        {"city": "Москва"} или {"cities": ["Москва", "Химки"]}
     schedule        {"schedule": "full_time"} или {"schedules": [...]}
-    salary          {"max": 90000} — потолок вакансии; если не задан,
+    salary          {"max": 90000} — потолок вакансии; если ключа нет,
                     берётся vacancies.salary_max
     available_from  {"date": "2026-10-01"} — не позже этой даты
     experience      {"min_months": 12}
@@ -24,7 +24,7 @@
 
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -114,9 +114,15 @@ def _check_schedule(value: dict[str, Any], profile: CandidateProfile) -> bool | 
 def _check_salary(
     value: dict[str, Any], vacancy: Vacancy, profile: CandidateProfile
 ) -> bool | None:
-    """Ожидания кандидата не должны превышать потолок вакансии."""
-    limit = _to_decimal(value.get("max"))
-    if limit is None:
+    """Ожидания кандидата не должны превышать потолок вакансии.
+
+    Потолок вакансии подставляется, только когда критерий его не задаёт.
+    Если `max` задан, но прочитать его нельзя, проверять нечем: молча
+    сравнивать с другим числом — значит менять смысл условия.
+    """
+    if "max" in value:
+        limit = _to_decimal(value["max"])
+    else:
         limit = _to_decimal(vacancy.salary_max)
     if limit is None or profile.salary is None:
         return None
@@ -134,8 +140,8 @@ def _check_available_from(
 
 
 def _check_experience(value: dict[str, Any], profile: CandidateProfile) -> bool | None:
-    minimum = value.get("min_months")
-    if not isinstance(minimum, int) or profile.experience_months is None:
+    minimum = _to_months(value.get("min_months"))
+    if minimum is None or profile.experience_months is None:
         return None
     return profile.experience_months >= minimum
 
@@ -170,11 +176,39 @@ def _to_decimal(value: Any) -> Decimal | None:
     return number
 
 
+def _to_months(value: Any) -> int | None:
+    """Число месяцев из критерия.
+
+    `True` — не «один месяц»: булево значение в этом поле означает, что
+    критерий заполнен неверно. Число в виде строки или с нулевой дробной
+    частью принимаем: так его может прислать форма вакансии.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            logger.warning("Некорректное число месяцев в критерии")
+            return None
+    return None
+
+
 def _to_date(value: Any) -> date | None:
     if not isinstance(value, str):
         return None
+    cleaned = value.strip()
     try:
-        return date.fromisoformat(value)
+        return date.fromisoformat(cleaned)
+    except ValueError:
+        pass
+    try:
+        # Форма могла прислать дату вместе со временем
+        return datetime.fromisoformat(cleaned).date()
     except ValueError:
         logger.warning("Некорректная дата в критерии")
         return None
