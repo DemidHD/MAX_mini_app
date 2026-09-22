@@ -400,9 +400,9 @@ async def run() -> None:
         )
 
         check(
-            "лента сообщает, есть ли ещё вакансии",
-            "has_more" in feed.json() and feed.json()["has_more"] is False,
-            str(feed.json().get("has_more")),
+            "total считает все подходящие вакансии",
+            feed.json()["total"] == len(feed.json()["items"]),
+            f"total={feed.json()['total']}, на странице {len(feed.json()['items'])}",
         )
 
         bad_paging = await client.get(

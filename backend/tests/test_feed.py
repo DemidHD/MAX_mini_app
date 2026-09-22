@@ -3,7 +3,6 @@
 from datetime import date
 from decimal import Decimal
 
-import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from tortoise import Tortoise
@@ -299,7 +298,7 @@ async def test_unknown_criterion_type_does_not_break_feed(client: AsyncClient) -
     Такое значение может остаться в базе от более новой версии кода, поэтому
     подбор просто не берёт его в расчёт.
     """
-    await _login_candidate(client, 741014)
+    await _login_candidate(client, 741020)
     broken = await _vacancy("С неизвестным условием")
     await Tortoise.get_connection("default").execute_query(
         "INSERT INTO vacancy_criteria (vacancy_id, type, required, value, created_at)"
@@ -311,66 +310,9 @@ async def test_unknown_criterion_type_does_not_break_feed(client: AsyncClient) -
     assert set(_titles(await _feed(client))) == {"С неизвестным условием", "Обычная"}
 
 
-async def test_suitable_vacancy_beyond_first_batch_is_found(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Подходящая вакансия за пределами одной порции не должна теряться."""
-    monkeypatch.setattr(service, "FEED_BATCH_SIZE", 3)
-    await _login_candidate(client, 741015, city="Москва")
-    await _vacancy(
-        "Подходящая и самая старая",
-        criteria=[(CriterionType.LOCATION, {"city": "Москва"}, True)],
-    )
-    for index in range(10):
-        await _vacancy(
-            f"Казань {index}",
-            criteria=[(CriterionType.LOCATION, {"city": "Казань"}, True)],
-        )
-
-    body = await _feed(client)
-
-    assert _titles(body) == ["Подходящая и самая старая"]
-    assert body["has_more"] is False
-
-
-async def test_has_more_reports_unscanned_vacancies(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Упёрлись в предел просмотра.
-
-    Страница пустая, но frontend знает, что дальше есть вакансии.
-    """
-    monkeypatch.setattr(service, "FEED_BATCH_SIZE", 2)
-    monkeypatch.setattr(service, "FEED_MAX_SCANNED", 2)
-    await _login_candidate(client, 741016, city="Москва")
-    for index in range(5):
-        await _vacancy(
-            f"Казань {index}",
-            criteria=[(CriterionType.LOCATION, {"city": "Казань"}, True)],
-        )
-
-    body = await _feed(client)
-
-    assert body["items"] == []
-    assert body["has_more"] is True
-
-
-async def test_has_more_is_false_when_all_vacancies_scanned(
-    client: AsyncClient,
-) -> None:
-    await _login_candidate(client, 741017)
-    await _vacancy("Первая")
-    await _vacancy("Вторая")
-
-    body = await _feed(client)
-
-    assert body["total"] == 2
-    assert body["has_more"] is False
-
-
 async def test_pages_do_not_overlap_for_equal_created_at(client: AsyncClient) -> None:
     """Одинаковое время создания не должно перемешивать страницы."""
-    await _login_candidate(client, 741018)
+    await _login_candidate(client, 741021)
     employer = await _employer()
     connection = Tortoise.get_connection("default")
     for index in range(4):
@@ -387,16 +329,14 @@ async def test_pages_do_not_overlap_for_equal_created_at(client: AsyncClient) ->
     assert len(set(first + second)) == 4
 
 
-async def test_has_more_is_true_when_next_page_is_already_found(
-    client: AsyncClient,
-) -> None:
-    """Подходящих на одну больше, чем влезает в страницу: следующая не пустая."""
-    await _login_candidate(client, 741019)
+async def test_total_counts_all_suitable_vacancies(client: AsyncClient) -> None:
+    """`total` — полное число подходящих вакансий, а не размер страницы."""
+    await _login_candidate(client, 741022)
     for index in range(3):
         await _vacancy(f"Вакансия {index}")
 
     body = await _feed(client, limit=2)
 
     assert len(body["items"]) == 2
-    assert body["has_more"] is True
+    assert body["total"] == 3
     assert len(_titles(await _feed(client, limit=2, offset=2))) == 1

@@ -27,18 +27,12 @@ async def get_feed(user: User, *, limit: int, offset: int) -> FeedResponse:
     проходит обязательный критерий. Если проверить критерий нечем — вакансия
     остаётся: показывать меньше, чем можно проверить простым правилом, продукт
     не требует.
-
-    Вакансии просматриваются порциями, пока не наберётся запрошенная страница
-    или не будет исчерпан предел просмотра. `has_more` говорит frontend, что
-    за просмотренным есть ещё вакансии, даже если страница получилась пустой.
     """
     profile = await CandidateProfile.get_or_none(user_id=user.user_id)
     if profile is None:
         # Без профиля подбирать не по чему: кандидат сначала заполняет профиль
         logger.info("Лента запрошена без профиля кандидата")
-        return FeedResponse(
-            items=[], limit=limit, offset=offset, total=0, has_more=False
-        )
+        return FeedResponse(items=[], limit=limit, offset=offset, total=0)
 
     applied_vacancy_ids = set(
         await Application.filter(candidate_id=user.user_id).values_list(
@@ -59,7 +53,7 @@ async def get_feed(user: User, *, limit: int, offset: int) -> FeedResponse:
         vacancies = await (
             vacancies_query.offset(scanned)
             .limit(FEED_SCAN_BATCH_SIZE)
-            .prefetch_related("criteria")
+            .prefetch_related(_known_criteria())
         )
         if not vacancies:
             break
@@ -100,4 +94,18 @@ async def get_feed(user: User, *, limit: int, offset: int) -> FeedResponse:
         limit=limit,
         offset=offset,
         total=total,
+    )
+
+
+def _known_criteria() -> Prefetch:
+    """Читает только критерии известных типов.
+
+    Значение типа вне `CriterionType` (например, оставшееся от более новой
+    версии кода) иначе роняет чтение всей ленты, а не одну вакансию. Такой
+    критерий подбор всё равно проверить не может, поэтому вакансия остаётся
+    в ленте по общему правилу.
+    """
+    return Prefetch(
+        "criteria",
+        queryset=VacancyCriterion.filter(type__in=list(CriterionType)),
     )
