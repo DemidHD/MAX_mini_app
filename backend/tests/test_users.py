@@ -58,6 +58,18 @@ async def test_empty_first_name_is_rejected(client: AsyncClient) -> None:
     assert response.json()["error"]["code"] == "validation_error"
 
 
+async def test_null_first_name_is_rejected(client: AsyncClient) -> None:
+    await _login(client, 710010)
+
+    response = await client.patch(
+        "/api/users/me/profile", json={"first_name": None}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert (await User.get(user_id=710010)).first_name == "Иван"
+
+
 async def test_user_id_in_body_does_not_change_another_user(client: AsyncClient) -> None:
     victim = await User.create(user_id=710004, first_name="Жертва")
     await _login(client, 710005)

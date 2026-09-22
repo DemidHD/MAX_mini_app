@@ -160,10 +160,14 @@ def _to_decimal(value: Any) -> Decimal | None:
     if value is None or isinstance(value, bool):
         return None
     try:
-        return Decimal(str(value))
+        number = Decimal(str(value))
     except (InvalidOperation, ValueError):
         logger.warning("Некорректное числовое значение критерия")
         return None
+    if not number.is_finite():
+        logger.warning("Неконечное числовое значение критерия")
+        return None
+    return number
 
 
 def _to_date(value: Any) -> date | None:

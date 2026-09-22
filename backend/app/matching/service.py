@@ -12,9 +12,10 @@ from app.vacancies.models import Vacancy
 
 logger = logging.getLogger("app.matching")
 
-# Сколько последних опубликованных вакансий просматриваем за один запрос.
-# Обязательные критерии считаются в Python, поэтому окно ограничено.
-FEED_SCAN_LIMIT = 500
+# Обязательные критерии считаются в Python. Читаем вакансии пакетами, но
+# проходим всю выборку: иначе подходящие вакансии за первым окном терялись бы,
+# а `total` зависел бы от внутреннего лимита сканирования.
+FEED_SCAN_BATCH_SIZE = 200
 
 
 async def get_feed(user: User, *, limit: int, offset: int) -> FeedResponse:
@@ -37,42 +38,58 @@ async def get_feed(user: User, *, limit: int, offset: int) -> FeedResponse:
         )
     )
 
-    vacancies = (
-        await Vacancy.filter(status=VacancyStatus.PUBLISHED)
+    vacancies_query = (
+        Vacancy.filter(status=VacancyStatus.PUBLISHED)
         .exclude(id__in=applied_vacancy_ids or [0])
-        .order_by("-created_at")
-        .limit(FEED_SCAN_LIMIT)
-        .prefetch_related("criteria")
+        .order_by("-created_at", "-id")
     )
 
-    suitable: list[FeedVacancy] = []
-    for vacancy in vacancies:
-        criteria = list(vacancy.criteria)
-        results = evaluate_vacancy(vacancy, criteria, profile)
-        if not matches_required_criteria(results):
-            continue
-        suitable.append(
-            FeedVacancy(
-                id=vacancy.id,
-                title=vacancy.title,
-                location=vacancy.location,
-                salary_min=vacancy.salary_min,
-                salary_max=vacancy.salary_max,
-                schedule=vacancy.schedule,
-                criteria=[
-                    FeedCriterion(
-                        type=criterion.type,
-                        required=criterion.required,
-                        value=criterion.value,
-                    )
-                    for criterion in criteria
-                ],
-            )
+    page: list[FeedVacancy] = []
+    total = 0
+    scanned = 0
+    while True:
+        vacancies = await (
+            vacancies_query.offset(scanned)
+            .limit(FEED_SCAN_BATCH_SIZE)
+            .prefetch_related("criteria")
         )
+        if not vacancies:
+            break
+
+        for vacancy in vacancies:
+            criteria = list(vacancy.criteria)
+            results = evaluate_vacancy(vacancy, criteria, profile)
+            if not matches_required_criteria(results):
+                continue
+
+            if offset <= total < offset + limit:
+                page.append(
+                    FeedVacancy(
+                        id=vacancy.id,
+                        title=vacancy.title,
+                        location=vacancy.location,
+                        salary_min=vacancy.salary_min,
+                        salary_max=vacancy.salary_max,
+                        schedule=vacancy.schedule,
+                        criteria=[
+                            FeedCriterion(
+                                type=criterion.type,
+                                required=criterion.required,
+                                value=criterion.value,
+                            )
+                            for criterion in criteria
+                        ],
+                    )
+                )
+            total += 1
+
+        scanned += len(vacancies)
+        if len(vacancies) < FEED_SCAN_BATCH_SIZE:
+            break
 
     return FeedResponse(
-        items=suitable[offset : offset + limit],
+        items=page,
         limit=limit,
         offset=offset,
-        total=len(suitable),
+        total=total,
     )

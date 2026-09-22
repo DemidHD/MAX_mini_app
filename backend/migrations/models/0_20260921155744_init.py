@@ -177,6 +177,20 @@ CREATE TABLE IF NOT EXISTS "aerich" (
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
     return """
+        DROP TABLE IF EXISTS "analytics_events";
+        DROP TABLE IF EXISTS "interviews";
+        DROP TABLE IF EXISTS "interview_slots";
+        DROP TABLE IF EXISTS "screening_answers";
+        DROP TABLE IF EXISTS "matches";
+        DROP TABLE IF EXISTS "employer_decisions";
+        DROP TABLE IF EXISTS "applications";
+        DROP TABLE IF EXISTS "vacancy_criteria";
+        DROP TABLE IF EXISTS "screening_questions";
+        DROP TABLE IF EXISTS "referral_links";
+        DROP TABLE IF EXISTS "vacancies";
+        DROP TABLE IF EXISTS "candidate_profiles";
+        DROP TABLE IF EXISTS "sessions";
+        DROP TABLE IF EXISTS "users";
         """
 
 

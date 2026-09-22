@@ -1,6 +1,8 @@
 """Авторизация через MAX и серверные сессии. Разделы 6, 7, 10 тех-доки."""
 
+import asyncio
 import logging
+import time
 from datetime import timedelta
 from uuid import UUID
 
@@ -15,6 +17,9 @@ from app.users.models import User
 from app.vacancies.models import Vacancy
 
 logger = logging.getLogger("app.auth")
+
+_session_cleanup_lock = asyncio.Lock()
+_last_session_cleanup: float | None = None
 
 # Отклики, по которым сценарий кандидата ещё продолжается: на них возвращаем
 # пользователя при повторном открытии Mini App.
@@ -36,12 +41,48 @@ async def authenticate(init_data_raw: str) -> tuple[User, Session]:
         bot_token=settings.max_bot_token,
         max_age_seconds=settings.auth_date_max_age_seconds,
     )
+    await _cleanup_expired_sessions_if_due()
     user = await _upsert_user(init_data.user)
     session = await Session.create(
         user=user,
         expires_at=utcnow() + timedelta(hours=settings.session_ttl_hours),
     )
     return user, session
+
+
+async def cleanup_expired_sessions(*, force: bool = False) -> int:
+    """Периодически удаляет сессии, которые больше не предъявляются клиентами."""
+    global _last_session_cleanup
+
+    now = time.monotonic()
+    interval = settings.session_cleanup_interval_seconds
+    if (
+        not force
+        and _last_session_cleanup is not None
+        and now - _last_session_cleanup < interval
+    ):
+        return 0
+
+    async with _session_cleanup_lock:
+        now = time.monotonic()
+        if (
+            not force
+            and _last_session_cleanup is not None
+            and now - _last_session_cleanup < interval
+        ):
+            return 0
+        # Даже неуспешную попытку ограничиваем интервалом, чтобы сбой БД не
+        # создавал лавину одинаковых cleanup-запросов на каждой авторизации.
+        _last_session_cleanup = now
+        return await Session.filter(expires_at__lte=utcnow()).delete()
+
+
+async def _cleanup_expired_sessions_if_due() -> None:
+    try:
+        await cleanup_expired_sessions()
+    except Exception:
+        # Сервисная очистка не должна превращать валидную авторизацию в 500.
+        logger.exception("Не удалось очистить просроченные сессии")
 
 
 async def _upsert_user(max_user: MaxUser) -> User:

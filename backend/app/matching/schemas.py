@@ -35,5 +35,5 @@ class FeedResponse(BaseModel):
     items: list[FeedVacancy]
     limit: int
     offset: int
-    # Сколько подходящих вакансий найдено всего в просмотренном окне
+    # Полное число подходящих опубликованных вакансий
     total: int

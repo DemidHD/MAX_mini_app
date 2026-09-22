@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router-dom'
 
 import { pathForStep } from '@/app/routes'
-import { useAuth } from '@/auth/AuthContext'
+import { useAuth } from '@/auth/useAuth'
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/LoadingState'
 import { MaxBridgeUnavailableError } from '@/bridge/maxBridge'

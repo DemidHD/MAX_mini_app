@@ -3,6 +3,8 @@
 import logging
 from pathlib import Path
 
+from tortoise.transactions import in_transaction
+
 from app.analytics import service as analytics
 from app.core.database import utcnow
 from app.core.enums import UserRole
@@ -63,27 +65,58 @@ async def set_avatar(user: User, content: bytes) -> User:
     ensure_avatar_size(len(content))
     mime = detect_avatar_mime(content)
 
-    previous_path = user.avatar_path
     new_path = save_avatar(user.user_id, content, mime)
+    previous_path: str | None = None
+    updated_at = utcnow()
+    try:
+        async with in_transaction() as connection:
+            locked_user = await (
+                User.filter(user_id=user.user_id)
+                .using_db(connection)
+                .select_for_update()
+                .get()
+            )
+            previous_path = locked_user.avatar_path
+            locked_user.avatar_path = str(new_path)
+            locked_user.avatar_updated_at = updated_at
+            await locked_user.save(
+                using_db=connection,
+                update_fields=["avatar_path", "avatar_updated_at", "updated_at"],
+            )
+    except Exception:
+        delete_file(new_path)
+        raise
 
     user.avatar_path = str(new_path)
-    user.avatar_updated_at = utcnow()
-    await user.save(update_fields=["avatar_path", "avatar_updated_at", "updated_at"])
-
-    if previous_path and previous_path != str(new_path):
+    user.avatar_updated_at = updated_at
+    if previous_path:
         delete_file(previous_path)
     return user
 
 
 async def delete_avatar(user: User) -> None:
     """Удаляет файл и очищает поля. Отсутствие аватарки — не ошибка сценария."""
-    if not user.avatar_path:
-        raise NotFoundError("Аватарка не установлена", code="avatar_not_found")
+    async with in_transaction() as connection:
+        locked_user = await (
+            User.filter(user_id=user.user_id)
+            .using_db(connection)
+            .select_for_update()
+            .get()
+        )
+        previous_path = locked_user.avatar_path
+        if not previous_path:
+            raise NotFoundError("Аватарка не установлена", code="avatar_not_found")
 
-    delete_file(user.avatar_path)
+        locked_user.avatar_path = None
+        locked_user.avatar_updated_at = None
+        await locked_user.save(
+            using_db=connection,
+            update_fields=["avatar_path", "avatar_updated_at", "updated_at"],
+        )
+
     user.avatar_path = None
     user.avatar_updated_at = None
-    await user.save(update_fields=["avatar_path", "avatar_updated_at", "updated_at"])
+    delete_file(previous_path)
 
 
 def get_avatar_file(user: User) -> Path:

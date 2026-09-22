@@ -46,11 +46,13 @@ class ProfileUpdateRequest(BaseModel):
     first_name: str | None = Field(default=None, max_length=100)
     last_name: str | None = Field(default=None, max_length=100)
 
-    @field_validator("first_name")
+    @field_validator("first_name", mode="before")
     @classmethod
-    def _require_non_empty(cls, value: str | None) -> str | None:
+    def _require_non_empty(cls, value: object) -> str:
         if value is None:
-            return None
+            raise ValueError("Имя нельзя удалить")
+        if not isinstance(value, str):
+            raise ValueError("Имя должно быть строкой")
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("Имя не может быть пустым")
