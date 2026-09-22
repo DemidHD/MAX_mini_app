@@ -11,6 +11,8 @@ from typing import AsyncIterator
 from fastapi import APIRouter, FastAPI
 from tortoise.contrib.fastapi import RegisterTortoise
 
+from app.applications.router import employer_router, vacancies_router
+from app.applications.router import router as applications_router
 from app.auth.router import router as auth_router
 from app.candidates.router import router as candidate_router
 from app.core.config import settings
@@ -53,6 +55,9 @@ api_router.include_router(users_router)
 api_router.include_router(candidate_router)
 # Раньше любого /vacancies/{id}, иначе feed уедет в параметр пути
 api_router.include_router(feed_router)
+api_router.include_router(vacancies_router)
+api_router.include_router(applications_router)
+api_router.include_router(employer_router)
 app.include_router(api_router)
 
 

@@ -29,6 +29,11 @@ class Application(Model):
         default=ApplicationStatus.CREATED,
         db_index=True,
     )
+    # Снимок обязательных фильтров на момент первичного отбора. Считать его
+    # заново по текущему профилю нельзя: кандидат мог изменить профиль после
+    # отбора, и карточка начала бы противоречить статусу отклика — человек
+    # отбор прошёл, а условия показывались бы проваленными.
+    hard_filter_result = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

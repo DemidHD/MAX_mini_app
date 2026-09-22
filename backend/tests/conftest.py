@@ -23,6 +23,8 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from tortoise import Tortoise
 
+from app.applications import router as applications_router
+from app.auth import router as auth_router
 from app.core.config import settings
 from app.core.database import TORTOISE_ORM
 from app.main import app, lifespan
@@ -91,6 +93,18 @@ async def _database(tmp_path_factory: pytest.TempPathFactory) -> AsyncIterator[N
         await _run_on_dev_database(
             f'DROP DATABASE IF EXISTS "{_TEST_DB_NAME}" WITH (FORCE)'
         )
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_auth_rate_limit() -> AsyncIterator[None]:
+    """Счётчики rate limit общие на процесс, поэтому чистим их между тестами.
+
+    Иначе логины из одного модуля выбирали бы лимит у следующего, и падал бы
+    не тот тест, который его исчерпал.
+    """
+    await auth_router.auth_rate_limiter.reset()
+    await applications_router.apply_rate_limiter.reset()
+    yield
 
 
 @pytest.fixture(scope="session", autouse=True)
