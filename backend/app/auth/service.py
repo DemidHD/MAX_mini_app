@@ -50,15 +50,17 @@ async def _upsert_user(max_user: MaxUser) -> User:
     Имя и фамилия при повторном входе не перезаписываются: пользователь мог
     изменить их внутри MAX Найм (раздел 7).
     """
-    user = await User.get_or_none(user_id=max_user.user_id)
-    if user is None:
-        return await User.create(
-            user_id=max_user.user_id,
-            first_name=max_user.first_name,
-            last_name=max_user.last_name,
-            username=max_user.username,
-            language_code=max_user.language_code,
-        )
+    user, created = await User.get_or_create(
+        user_id=max_user.user_id,
+        defaults={
+            "first_name": max_user.first_name,
+            "last_name": max_user.last_name,
+            "username": max_user.username,
+            "language_code": max_user.language_code,
+        },
+    )
+    if created:
+        return user
 
     user.username = max_user.username
     user.language_code = max_user.language_code

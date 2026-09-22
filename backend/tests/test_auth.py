@@ -1,5 +1,6 @@
 """POST /api/auth/max: создание пользователя, сессия, current_step. Разделы 7, 10."""
 
+import asyncio
 from datetime import timedelta
 
 from httpx import AsyncClient
@@ -34,6 +35,26 @@ async def test_first_login_creates_user_without_role(client: AsyncClient) -> Non
 
     stored = await User.get(user_id=700001)
     assert stored.role is None
+
+
+async def test_concurrent_first_logins_create_one_user(client: AsyncClient) -> None:
+    """Параллельные первые входы не конфликтуют по users_pkey."""
+    user_id = 700013
+    init_data = build_init_data(user=max_user_payload(user_id=user_id))
+
+    responses = await asyncio.gather(
+        *(
+            client.post("/api/auth/max", json={"init_data": init_data})
+            for _ in range(8)
+        )
+    )
+
+    assert [response.status_code for response in responses] == [200] * len(responses)
+    assert await User.filter(user_id=user_id).count() == 1
+    assert all(
+        response.cookies.get(settings.session_cookie_name) is not None
+        for response in responses
+    )
 
 
 async def test_login_sets_httponly_session_cookie(client: AsyncClient) -> None:
