@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     auth_rate_limit_requests: int = 120
     auth_rate_limit_window_seconds: int = 60
     session_cleanup_interval_seconds: int = 300
+    # Раздел 78: отклик — одна из операций, которым нужна защита.
+    # Ключ — пользователь сессии, а не адрес: отклик доступен только
+    # авторизованному кандидату.
+    apply_rate_limit_requests: int = 30
+    apply_rate_limit_window_seconds: int = 60
 
     # --- Локальное файловое хранилище ---
     storage_root: Path = Path("/app/storage")
