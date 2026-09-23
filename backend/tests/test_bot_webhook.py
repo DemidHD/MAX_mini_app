@@ -209,38 +209,28 @@ class _MessageEvent:
         return 1, self._user_id
 
 
-async def test_bot_started_answers_with_mini_app_link() -> None:
-    fake = _FakeBot()
+async def test_bot_handlers_flow() -> None:
+    # 1. bot_started отвечает приветствием со ссылкой на Mini App
+    started = _FakeBot()
+    await handle_bot_started(_BotStartedEvent(started, 100500))
+    assert started.messages == [(100500, messages.bot_greeting())]
 
-    await handle_bot_started(_BotStartedEvent(fake, 100500))
+    # 2. /start отвечает тем же приветствием
+    start_command = _FakeBot()
+    await handle_start_command(_MessageEvent(start_command, 100501))
+    assert start_command.messages == [(100501, messages.bot_greeting())]
 
-    assert fake.messages == [(100500, messages.bot_greeting())]
+    # 3. Событие без user_id — обработчик тихо ничего не делает
+    without_user = _FakeBot()
+    await handle_start_command(_MessageEvent(without_user, None))
+    assert without_user.messages == []
 
-
-async def test_start_command_answers_with_mini_app_link() -> None:
-    fake = _FakeBot()
-
-    await handle_start_command(_MessageEvent(fake, 100501))
-
-    assert fake.messages == [(100501, messages.bot_greeting())]
-
-
-async def test_handler_without_user_id_does_nothing() -> None:
-    fake = _FakeBot()
-
-    await handle_start_command(_MessageEvent(fake, None))
-
-    assert fake.messages == []
-
-
-async def test_handler_survives_send_failure() -> None:
-    """Падение обработчика ничего не исправит: MAX повторит доставку события."""
-    fake = _FakeBot()
-    fake.fail = True
-
-    await handle_start_command(_MessageEvent(fake, 100502))
-
-    assert fake.messages == []
+    # 4. Падение отправки не должно повторяться внутри обработчика:
+    # MAX сам повторит доставку события
+    failing = _FakeBot()
+    failing.fail = True
+    await handle_start_command(_MessageEvent(failing, 100502))
+    assert failing.messages == []
 
 
 # --- Остановка приложения ---------------------------------------------------

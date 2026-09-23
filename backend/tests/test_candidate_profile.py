@@ -1,4 +1,9 @@
-"""GET/PATCH /api/candidate/profile. Разделы 14, 27 тех-доки."""
+"""GET/PATCH /api/candidate/profile. Разделы 14, 27 тех-доки.
+
+Guard'ы и весь путь создания/редактирования профиля собраны в сквозные
+сценарии. Гонки при первом сохранении оставлены отдельными тестами — там
+важна изолированная диагностика конкретной гонки, а не компактность.
+"""
 
 import asyncio
 from datetime import date
@@ -67,16 +72,18 @@ async def _patch(client: AsyncClient, payload: dict) -> dict:
     return response.json()
 
 
-async def test_profile_requires_session(client: AsyncClient) -> None:
+# --- Доступ --------------------------------------------------------------------
+
+
+async def test_profile_access_guards(client: AsyncClient) -> None:
+    # 1. Без сессии профиль недоступен вовсе
     assert (await client.get("/api/candidate/profile")).status_code == 401
     assert (
         await client.patch("/api/candidate/profile", json={"city": "Москва"})
     ).status_code == 401
 
-
-async def test_profile_requires_candidate_role(client: AsyncClient) -> None:
+    # 2. Без выбранной роли и с чужой ролью — тоже нет
     await _login(client, 750001, None)
-
     without_role = await client.get("/api/candidate/profile")
     assert without_role.status_code == 403
     assert without_role.json()["error"]["code"] == "role_not_selected"
@@ -89,85 +96,67 @@ async def test_profile_requires_candidate_role(client: AsyncClient) -> None:
     assert as_employer.json()["error"]["code"] == "wrong_role"
     assert await CandidateProfile.get_or_none(user_id=750001) is None
 
-
-async def test_get_before_creation_returns_404(client: AsyncClient) -> None:
+    # 3. У кандидата без профиля GET возвращает 404
     await _login(client, 750002, UserRole.CANDIDATE)
-
     response = await client.get("/api/candidate/profile")
-
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "candidate_profile_not_found"
 
 
-async def test_patch_creates_profile(client: AsyncClient) -> None:
+# --- Создание и редактирование --------------------------------------------------
+
+
+async def test_profile_create_and_update_flow(client: AsyncClient) -> None:
+    # 1. Без desired_role профиль создать нельзя
+    await _login(client, 750004, UserRole.CANDIDATE)
+    missing_role = await client.patch(
+        "/api/candidate/profile", json={"city": "Москва"}
+    )
+    assert missing_role.status_code == 422
+    assert missing_role.json()["error"]["code"] == "desired_role_required"
+    assert await CandidateProfile.get_or_none(user_id=750004) is None
+
+    # 2. PATCH создаёт профиль с переданными полями
     await _login(client, 750003, UserRole.CANDIDATE)
-
     created = await _patch(client, FULL_PROFILE)
-
     assert created["user_id"] == 750003
     assert created["desired_role"] == "Бариста"
     assert created["salary"] == "70000.00"
     assert created["experience_months"] == 24
     assert created["available_from"] == "2026-10-01"
-
     stored = await CandidateProfile.get(user_id=750003)
     assert stored.city == "Москва"
     assert stored.schedule == "full_time"
     assert stored.available_from == date(2026, 10, 1)
     assert (await client.get("/api/candidate/profile")).json() == created
 
-
-async def test_creation_requires_desired_role(client: AsyncClient) -> None:
-    await _login(client, 750004, UserRole.CANDIDATE)
-
-    response = await client.patch("/api/candidate/profile", json={"city": "Москва"})
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "desired_role_required"
-    assert await CandidateProfile.get_or_none(user_id=750004) is None
-
-
-async def test_partial_update_keeps_other_fields(client: AsyncClient) -> None:
-    await _login(client, 750005, UserRole.CANDIDATE)
-    await _patch(client, FULL_PROFILE)
-
+    # 3. Частичное обновление меняет только переданные поля
     updated = await _patch(client, {"salary": "85000"})
-
     assert updated["salary"] == "85000.00"
     assert updated["desired_role"] == "Бариста"
     assert updated["city"] == "Москва"
     assert updated["experience_months"] == 24
     assert updated["updated_at"] >= updated["created_at"]
 
-
-async def test_null_clears_optional_field(client: AsyncClient) -> None:
-    await _login(client, 750006, UserRole.CANDIDATE)
+    # 4. Явный null очищает необязательное поле
     await _patch(client, FULL_PROFILE)
-
-    updated = await _patch(client, {"city": None, "available_from": None})
-
-    assert updated["city"] is None
-    assert updated["available_from"] is None
-    assert updated["schedule"] == "full_time"
-
-
-async def test_empty_strings_are_normalized(client: AsyncClient) -> None:
-    """Пустой город — очистка поля, пустая желаемая должность — ошибка."""
-    await _login(client, 750007, UserRole.CANDIDATE)
-    await _patch(client, FULL_PROFILE)
-
-    cleared = await _patch(client, {"city": "   "})
+    cleared = await _patch(client, {"city": None, "available_from": None})
     assert cleared["city"] is None
+    assert cleared["available_from"] is None
+    assert cleared["schedule"] == "full_time"
 
-    response = await client.patch("/api/candidate/profile", json={"desired_role": " "})
-    assert response.status_code == 422
-    assert (await CandidateProfile.get(user_id=750007)).desired_role == "Бариста"
-
-
-async def test_invalid_values_are_rejected(client: AsyncClient) -> None:
-    await _login(client, 750008, UserRole.CANDIDATE)
+    # 5. Пустая строка — тоже очистка, но не для обязательной желаемой должности
     await _patch(client, FULL_PROFILE)
+    blank_city = await _patch(client, {"city": "   "})
+    assert blank_city["city"] is None
+    blank_role = await client.patch(
+        "/api/candidate/profile", json={"desired_role": " "}
+    )
+    assert blank_role.status_code == 422
+    assert (await CandidateProfile.get(user_id=750003)).desired_role == "Бариста"
 
+    # 6. Некорректные значения отклоняются, ничего не сохраняется
+    await _patch(client, FULL_PROFILE)
     invalid_payloads = [
         {"salary": "-1"},
         {"salary": "12345678901234"},
@@ -182,37 +171,28 @@ async def test_invalid_values_are_rejected(client: AsyncClient) -> None:
     for payload in invalid_payloads:
         response = await client.patch("/api/candidate/profile", json=payload)
         assert response.status_code == 422, (payload, response.text)
+    stored_after_invalid = await CandidateProfile.get(user_id=750003)
+    assert stored_after_invalid.salary == Decimal("70000.00")
+    assert stored_after_invalid.experience_months == 24
 
-    stored = await CandidateProfile.get(user_id=750008)
-    assert stored.salary == Decimal("70000.00")
-    assert stored.experience_months == 24
-
-
-async def test_empty_patch_does_not_change_profile(client: AsyncClient) -> None:
-    await _login(client, 750009, UserRole.CANDIDATE)
-    created = await _patch(client, FULL_PROFILE)
-
+    # 7. Пустой PATCH ничего не меняет
+    baseline = await _patch(client, FULL_PROFILE)
     unchanged = await _patch(client, {})
+    assert unchanged == baseline
 
-    assert unchanged == created
-
-
-async def test_profile_belongs_to_session_user(client: AsyncClient) -> None:
-    """Личность берётся из сессии: чужой профиль не читается и не меняется."""
-    await _login(client, 750010, UserRole.CANDIDATE)
-    await _patch(client, FULL_PROFILE)
-
+    # 8. Личность берётся из сессии: чужой профиль не читается и не меняется
     await _login(client, 750011, UserRole.CANDIDATE)
     assert (await client.get("/api/candidate/profile")).status_code == 404
-
-    own = await _patch(client, {"desired_role": "Официант", "user_id": 750010})
-
+    own = await _patch(client, {"desired_role": "Официант", "user_id": 750003})
     assert own["user_id"] == 750011
-    assert (await CandidateProfile.get(user_id=750010)).desired_role == "Бариста"
+    assert (await CandidateProfile.get(user_id=750003)).desired_role == "Бариста"
 
 
-async def test_profile_change_keeps_screening_answers(client: AsyncClient) -> None:
-    """Изменение профиля не переписывает исторические ответы отбора."""
+# --- Взаимодействие с отбором и лентой ------------------------------------------
+
+
+async def test_profile_downstream_interactions(client: AsyncClient) -> None:
+    # 1. Изменение профиля не переписывает исторические ответы отбора
     candidate = await _login(client, 750012, UserRole.CANDIDATE)
     await _patch(client, FULL_PROFILE)
     employer = await _employer()
@@ -232,7 +212,6 @@ async def test_profile_change_keeps_screening_answers(client: AsyncClient) -> No
     answer = await ScreeningAnswer.create(
         application=application, question=question, value={"answer": True}
     )
-
     answered_at = answer.updated_at
 
     await _patch(client, {"available_from": "2027-01-01", "city": "Казань"})
@@ -242,15 +221,10 @@ async def test_profile_change_keeps_screening_answers(client: AsyncClient) -> No
     assert answer.updated_at == answered_at
     assert await ScreeningAnswer.filter(application=application).count() == 1
 
-
-async def test_filled_profile_opens_feed(client: AsyncClient) -> None:
-    """Этап 2 открывает вход в этап 3.
-
-    Без профиля лента пуста, с профилем — показывает подходящую вакансию.
-    """
+    # 2. Этап 2 открывает вход в этап 3: без профиля лента пуста, с профилем
+    # показывает подходящую вакансию
     await _login(client, 750013, UserRole.CANDIDATE)
-    employer = await _employer()
-    vacancy = await Vacancy.create(
+    feed_vacancy = await Vacancy.create(
         employer=employer,
         title="Бариста в центре",
         location="Москва",
@@ -259,12 +233,11 @@ async def test_filled_profile_opens_feed(client: AsyncClient) -> None:
         status=VacancyStatus.PUBLISHED,
     )
     await VacancyCriterion.create(
-        vacancy=vacancy,
+        vacancy=feed_vacancy,
         type=CriterionType.LOCATION,
         required=True,
         value={"city": "Москва"},
     )
-
     empty = await client.get("/api/vacancies/feed")
     assert empty.status_code == 200
     assert empty.json()["items"] == []
@@ -274,6 +247,9 @@ async def test_filled_profile_opens_feed(client: AsyncClient) -> None:
     feed = await client.get("/api/vacancies/feed")
     assert feed.status_code == 200
     assert "Бариста в центре" in [item["title"] for item in feed.json()["items"]]
+
+
+# --- Гонки при первом сохранении (диагностика важнее компактности) ------------
 
 
 async def test_concurrent_creation_makes_one_profile(client: AsyncClient) -> None:

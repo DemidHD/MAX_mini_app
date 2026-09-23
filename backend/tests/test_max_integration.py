@@ -141,73 +141,45 @@ async def _deliver(client: AsyncClient, update: dict[str, Any]):
 # --- MAX → webhook → диспетчер → обработчик ---------------------------------
 
 
-async def test_bot_started_update_reaches_handler(
+async def test_webhook_routing_flow(
     webhook_client: AsyncClient, bot_mock: MaxBotMock
 ) -> None:
-    """Раздел 43: открытие диалога приводит к ответу со ссылкой на Mini App."""
-    response = await _deliver(webhook_client, bot_started_update(BOT_USER_ID))
+    # 1. Открытие диалога отвечает приветствием со ссылкой на Mini App (раздел 43)
+    started = await _deliver(webhook_client, bot_started_update(BOT_USER_ID))
+    assert started.status_code == 200, started.text
+    assert bot_mock.sent == [{"user_id": BOT_USER_ID, "text": messages.bot_greeting()}]
+    bot_mock.sent.clear()
 
-    assert response.status_code == 200, response.text
-    assert bot_mock.sent == [
-        {"user_id": BOT_USER_ID, "text": messages.bot_greeting()}
-    ]
-
-
-async def test_start_command_reaches_handler(
-    webhook_client: AsyncClient, bot_mock: MaxBotMock
-) -> None:
-    response = await _deliver(webhook_client, message_update(BOT_USER_ID, "/start"))
-
-    assert response.status_code == 200, response.text
+    # 2. /start отвечает тем же приветствием
+    start_command = await _deliver(webhook_client, message_update(BOT_USER_ID, "/start"))
+    assert start_command.status_code == 200, start_command.text
     assert [item["user_id"] for item in bot_mock.sent] == [BOT_USER_ID]
     assert "Открыть приложение" in bot_mock.sent[0]["text"]
+    bot_mock.sent.clear()
 
-
-async def test_other_message_is_ignored(
-    webhook_client: AsyncClient, bot_mock: MaxBotMock
-) -> None:
-    """Бот в P0 не ведёт переписку: на обычные сообщения он не отвечает."""
-    response = await _deliver(
-        webhook_client, message_update(BOT_USER_ID, "здравствуйте")
-    )
-
-    assert response.status_code == 200
+    # 3. Бот в P0 не ведёт переписку: на обычные сообщения он не отвечает
+    other = await _deliver(webhook_client, message_update(BOT_USER_ID, "здравствуйте"))
+    assert other.status_code == 200
     assert bot_mock.sent == []
 
-
-async def test_unknown_update_type_is_acknowledged(
-    webhook_client: AsyncClient, bot_mock: MaxBotMock
-) -> None:
-    """Незнакомое обновление не должно приводить к повторной доставке."""
-    response = await _deliver(
+    # 4. Незнакомый тип обновления подтверждается без повторной доставки
+    unknown = await _deliver(
         webhook_client, {"update_type": "dialog_muted", "timestamp": _now_ms()}
     )
+    assert unknown.status_code == 200
+    assert unknown.json() == {"ok": True}
 
-    assert response.status_code == 200
-    assert response.json() == {"ok": True}
-
-
-async def test_update_without_secret_never_reaches_handler(
-    webhook_client: AsyncClient, bot_mock: MaxBotMock
-) -> None:
-    """Раздел 41: без секрета обновление не обрабатывается вовсе."""
-    response = await webhook_client.post(
+    # 5. Раздел 41: без секрета обновление не обрабатывается вовсе
+    no_secret = await webhook_client.post(
         "/webhook/max", json=bot_started_update(BOT_USER_ID)
     )
-
-    assert response.status_code == 403
+    assert no_secret.status_code == 403
     assert bot_mock.sent == []
 
-
-async def test_failing_send_does_not_break_webhook(
-    webhook_client: AsyncClient, bot_mock: MaxBotMock
-) -> None:
-    """Ошибка ответа не должна превращаться в 500: MAX повторит доставку."""
+    # 6. Ошибка отправки не превращается в 500: MAX сам повторит доставку
     bot_mock.error = RuntimeError("MAX недоступен")
-
-    response = await _deliver(webhook_client, bot_started_update(BOT_USER_ID))
-
-    assert response.status_code == 200
+    failing = await _deliver(webhook_client, bot_started_update(BOT_USER_ID))
+    assert failing.status_code == 200
 
 
 # --- NotificationService → MaxBotTransport → maxapi.Bot ----------------------

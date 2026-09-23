@@ -82,118 +82,103 @@ async def _apply(client: AsyncClient, vacancy: Vacancy):
 # --- Доступ -----------------------------------------------------------------
 
 
-async def test_apply_requires_session(client: AsyncClient) -> None:
-    vacancy = await _vacancy()
+async def test_apply_guards_and_vacancy_state(client: AsyncClient) -> None:
+    # 1. Без сессии — 401
+    session_vacancy = await _vacancy()
+    assert (await _apply(client, session_vacancy)).status_code == 401
 
-    assert (await _apply(client, vacancy)).status_code == 401
-
-
-async def test_apply_requires_candidate_role(client: AsyncClient) -> None:
-    vacancy = await _vacancy()
+    # 2. Не той роли и без выбранной роли — 403 с разными кодами
     await _candidate(client, role=UserRole.EMPLOYER)
+    wrong_role = await _apply(client, session_vacancy)
+    assert wrong_role.status_code == 403
+    assert wrong_role.json()["error"]["code"] == "wrong_role"
 
-    response = await _apply(client, vacancy)
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "wrong_role"
-
-
-async def test_apply_requires_selected_role(client: AsyncClient) -> None:
-    vacancy = await _vacancy()
     await _candidate(client, role=None)
+    no_role = await _apply(client, session_vacancy)
+    assert no_role.status_code == 403
+    assert no_role.json()["error"]["code"] == "role_not_selected"
 
-    response = await _apply(client, vacancy)
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "role_not_selected"
-
-
-# --- Состояние вакансии -----------------------------------------------------
-
-
-async def test_apply_to_unknown_vacancy_returns_404(client: AsyncClient) -> None:
+    # 3. Несуществующая вакансия — 404
     await _candidate(client)
+    unknown = await client.post("/api/vacancies/999999/apply")
+    assert unknown.status_code == 404
+    assert unknown.json()["error"]["code"] == "vacancy_not_found"
 
-    response = await client.post("/api/vacancies/999999/apply")
+    # 4. Черновик и закрытая вакансия откликов не принимают (раздел 57)
+    draft_vacancy = await _vacancy(VacancyStatus.DRAFT)
+    draft_response = await _apply(client, draft_vacancy)
+    assert draft_response.status_code == 409
+    assert draft_response.json()["error"]["code"] == "vacancy_not_published"
+    assert await Application.filter(vacancy_id=draft_vacancy.id).count() == 0
 
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "vacancy_not_found"
-
-
-async def test_apply_to_draft_vacancy_is_refused(client: AsyncClient) -> None:
-    vacancy = await _vacancy(VacancyStatus.DRAFT)
-    await _candidate(client)
-
-    response = await _apply(client, vacancy)
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "vacancy_not_published"
-    assert await Application.filter(vacancy_id=vacancy.id).count() == 0
-
-
-async def test_apply_to_closed_vacancy_is_refused(client: AsyncClient) -> None:
-    """Раздел 57: на закрытую вакансию новые отклики запрещены."""
-    vacancy = await _vacancy(VacancyStatus.CLOSED)
-    await _candidate(client)
-
-    response = await _apply(client, vacancy)
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "vacancy_not_published"
+    closed_vacancy = await _vacancy(VacancyStatus.CLOSED)
+    closed_response = await _apply(client, closed_vacancy)
+    assert closed_response.status_code == 409
+    assert closed_response.json()["error"]["code"] == "vacancy_not_published"
 
 
-# --- Создание отклика -------------------------------------------------------
+# --- Создание отклика, идемпотентность, побочные эффекты --------------------
 
 
-async def test_apply_creates_application_in_screening(client: AsyncClient) -> None:
-    """Раздел 32: сразу после создания отклик идёт на первичный отбор."""
+async def test_apply_happy_path_and_idempotency(client: AsyncClient) -> None:
+    # 1. Отклик сразу уходит на первичный отбор (раздел 32)
     vacancy = await _vacancy()
     candidate = await _candidate(client)
-
-    response = await _apply(client, vacancy)
-
-    assert response.status_code == 201, response.text
-    body = response.json()
+    created = await _apply(client, vacancy)
+    assert created.status_code == 201, created.text
+    body = created.json()
     assert body["vacancy_id"] == vacancy.id
     assert body["status"] == ApplicationStatus.SCREENING.value
-
     application = await Application.get(id=body["id"])
     assert application.candidate_id == candidate.user_id
     assert application.status == ApplicationStatus.SCREENING
 
-
-async def test_repeated_apply_returns_existing_application(
-    client: AsyncClient,
-) -> None:
-    """Раздел 57: дубликат возвращает существующий отклик, а не ошибку."""
-    vacancy = await _vacancy()
-    await _candidate(client)
-    first = await _apply(client, vacancy)
-
+    # 2. Повторный отклик возвращает существующий, а не ошибку (раздел 57)
     repeated = await _apply(client, vacancy)
-
-    assert first.status_code == 201
     assert repeated.status_code == 200
-    assert repeated.json()["id"] == first.json()["id"]
+    assert repeated.json()["id"] == body["id"]
     assert await Application.filter(vacancy_id=vacancy.id).count() == 1
 
-
-async def test_repeated_apply_does_not_reset_screening(client: AsyncClient) -> None:
-    """Повтор не должен вернуть уже прошедший отбор обратно в `screening`."""
-    vacancy = await _vacancy()
-    await _candidate(client)
-    application_id = (await _apply(client, vacancy)).json()["id"]
+    # 3. Пройденный отбор повтором отклика не откатывается обратно в screening
     passed = await client.post(
-        f"/api/applications/{application_id}/screening", json={"answers": []}
+        f"/api/applications/{body['id']}/screening", json={"answers": []}
     )
     assert passed.status_code == 200, passed.text
-
-    repeated = await _apply(client, vacancy)
-
-    assert repeated.status_code == 200
-    assert repeated.json()["status"] == ApplicationStatus.PASSED.value
-    application = await Application.get(id=application_id)
+    after_screening = await _apply(client, vacancy)
+    assert after_screening.status_code == 200
+    assert after_screening.json()["status"] == ApplicationStatus.PASSED.value
+    await application.refresh_from_db()
     assert application.status == ApplicationStatus.PASSED
+
+    # 4. Разные кандидаты откликаются на одну вакансию независимо друг от друга
+    await _candidate(client)
+    other = await _apply(client, vacancy)
+    assert other.status_code == 201
+    assert other.json()["id"] != body["id"]
+    assert await Application.filter(vacancy_id=vacancy.id).count() == 2
+
+    # 5. Отклик убирает вакансию из ленты откликнувшегося
+    feed_vacancy = await _vacancy()
+    await _candidate(client)
+    before_feed = (await client.get("/api/vacancies/feed")).json()
+    assert feed_vacancy.id in {item["id"] for item in before_feed["items"]}
+    await _apply(client, feed_vacancy)
+    after_feed = (await client.get("/api/vacancies/feed")).json()
+    assert feed_vacancy.id not in {item["id"] for item in after_feed["items"]}
+
+    # 6. Аналитика пишет событие один раз, даже если отклик повторён
+    analytics_vacancy = await _vacancy()
+    analytics_candidate = await _candidate(client)
+    await _apply(client, analytics_vacancy)
+    await _apply(client, analytics_vacancy)
+    events = await AnalyticsEvent.filter(
+        user_id=analytics_candidate.user_id, event_name="application_created"
+    )
+    assert len(events) == 1
+    assert events[0].payload["vacancy_id"] == analytics_vacancy.id
+
+
+# --- Конкурентность и rate limit (диагностика важнее компактности) ------------
 
 
 async def test_concurrent_applies_create_one_application(
@@ -208,50 +193,6 @@ async def test_concurrent_applies_create_one_application(
     assert {response.status_code for response in responses} <= {200, 201}
     assert len({response.json()["id"] for response in responses}) == 1
     assert await Application.filter(vacancy_id=vacancy.id).count() == 1
-
-
-async def test_different_candidates_apply_independently(
-    client: AsyncClient,
-) -> None:
-    vacancy = await _vacancy()
-    await _candidate(client)
-    first = await _apply(client, vacancy)
-    await _candidate(client)
-    second = await _apply(client, vacancy)
-
-    assert first.status_code == 201 and second.status_code == 201
-    assert first.json()["id"] != second.json()["id"]
-    assert await Application.filter(vacancy_id=vacancy.id).count() == 2
-
-
-async def test_apply_removes_vacancy_from_feed(client: AsyncClient) -> None:
-    vacancy = await _vacancy()
-    await _candidate(client)
-    before = (await client.get("/api/vacancies/feed")).json()
-    assert vacancy.id in {item["id"] for item in before["items"]}
-
-    await _apply(client, vacancy)
-
-    after = (await client.get("/api/vacancies/feed")).json()
-    assert vacancy.id not in {item["id"] for item in after["items"]}
-
-
-# --- Аналитика и защита -----------------------------------------------------
-
-
-async def test_apply_writes_analytics_event(client: AsyncClient) -> None:
-    vacancy = await _vacancy()
-    candidate = await _candidate(client)
-
-    await _apply(client, vacancy)
-    # Повтор события не дублирует: отклик уже существует
-    await _apply(client, vacancy)
-
-    events = await AnalyticsEvent.filter(
-        user_id=candidate.user_id, event_name="application_created"
-    )
-    assert len(events) == 1
-    assert events[0].payload["vacancy_id"] == vacancy.id
 
 
 async def test_apply_rate_limit_returns_429(client: AsyncClient) -> None:

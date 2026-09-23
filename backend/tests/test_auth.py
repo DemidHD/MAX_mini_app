@@ -132,71 +132,45 @@ async def test_relogin_refreshes_username_and_language(client: AsyncClient) -> N
     assert after.last_auth_at >= before.last_auth_at
 
 
-async def test_current_step_for_candidate_without_profile(client: AsyncClient) -> None:
+async def test_current_step_progression(client: AsyncClient) -> None:
+    # 1. Кандидат без профиля — шаг заполнения профиля
     await _auth(client, 700005)
     await User.filter(user_id=700005).update(role=UserRole.CANDIDATE)
+    without_profile = await _auth(client, 700005)
+    assert without_profile["current_step"] == "candidate_profile"
 
-    body = await _auth(client, 700005)
+    # 2. С профилем, но без отклика — шаг ленты
+    await CandidateProfile.create(user_id=700005, desired_role="Бариста")
+    with_profile = await _auth(client, 700005)
+    assert with_profile["current_step"] == "feed"
+    assert with_profile["application_id"] is None
 
-    assert body["current_step"] == "candidate_profile"
-
-
-async def test_current_step_for_candidate_with_profile(client: AsyncClient) -> None:
-    await _auth(client, 700006)
-    await User.filter(user_id=700006).update(role=UserRole.CANDIDATE)
-    await CandidateProfile.create(user_id=700006, desired_role="Бариста")
-
-    body = await _auth(client, 700006)
-
-    assert body["current_step"] == "feed"
-    assert body["application_id"] is None
-
-
-async def test_current_step_returns_active_application(client: AsyncClient) -> None:
-    await _auth(client, 700007)
-    await User.filter(user_id=700007).update(role=UserRole.CANDIDATE)
-    await CandidateProfile.create(user_id=700007, desired_role="Официант")
-
+    # 3. Активный отклик возвращает на статус отклика
     employer = await User.create(user_id=700008, first_name="Работодатель")
     vacancy = await Vacancy.create(employer=employer, title="Официант")
     application = await Application.create(
-        vacancy=vacancy, candidate_id=700007, status=ApplicationStatus.SCREENING
+        vacancy=vacancy, candidate_id=700005, status=ApplicationStatus.SCREENING
     )
+    with_application = await _auth(client, 700005)
+    assert with_application["current_step"] == "application_status"
+    assert with_application["application_id"] == application.id
 
-    body = await _auth(client, 700007)
+    # 4. Завершённый отклик (отказ) больше не держит на статусе — снова лента
+    application.status = ApplicationStatus.REJECTED
+    await application.save()
+    after_finished = await _auth(client, 700005)
+    assert after_finished["current_step"] == "feed"
 
-    assert body["current_step"] == "application_status"
-    assert body["application_id"] == application.id
-
-
-async def test_current_step_ignores_finished_application(client: AsyncClient) -> None:
-    await _auth(client, 700009)
-    await User.filter(user_id=700009).update(role=UserRole.CANDIDATE)
-    await CandidateProfile.create(user_id=700009, desired_role="Повар")
-
-    employer = await User.create(user_id=700010, first_name="Работодатель")
-    vacancy = await Vacancy.create(employer=employer, title="Повар")
-    await Application.create(
-        vacancy=vacancy, candidate_id=700009, status=ApplicationStatus.REJECTED
-    )
-
-    body = await _auth(client, 700009)
-
-    assert body["current_step"] == "feed"
-
-
-async def test_current_step_for_employer(client: AsyncClient) -> None:
+    # 5. Работодателю без вакансий — шаг создания вакансии, с вакансией — кабинет
     await _auth(client, 700011)
     await User.filter(user_id=700011).update(role=UserRole.EMPLOYER)
+    no_vacancy = await _auth(client, 700011)
+    assert no_vacancy["current_step"] == "vacancy_create"
 
-    body = await _auth(client, 700011)
-    assert body["current_step"] == "vacancy_create"
-
-    employer = await User.get(user_id=700011)
-    await Vacancy.create(employer=employer, title="Администратор")
-
-    body = await _auth(client, 700011)
-    assert body["current_step"] == "employer_home"
+    employer_user = await User.get(user_id=700011)
+    await Vacancy.create(employer=employer_user, title="Администратор")
+    with_vacancy = await _auth(client, 700011)
+    assert with_vacancy["current_step"] == "employer_home"
 
 
 async def test_expired_session_is_not_accepted(client: AsyncClient) -> None:

@@ -2,6 +2,11 @@
 
 `GET /api/employer/vacancies/{id}/candidates`, `POST /api/applications/{id}/decision`.
 Разделы 20, 26, 34, 35, 36, 56 тех-доки.
+
+Тесты сгруппированы по сквозным сценариям: guard'ы одного эндпоинта, весь
+invite-flow, весь reject-flow — в одной функции с пронумерованными шагами.
+Отдельными тестами остаются только конкурентность и специально
+воспроизводимые гонки состояния — там диагностика важнее компактности.
 """
 
 import asyncio
@@ -11,7 +16,7 @@ from itertools import count
 from typing import Any
 
 import pytest_asyncio
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from app.analytics.models import AnalyticsEvent
 from app.applications import employer_service
@@ -26,6 +31,7 @@ from app.core.enums import (
     UserRole,
     VacancyStatus,
 )
+from app.main import app
 from app.users.models import User
 from app.vacancies.models import ScreeningQuestion, Vacancy, VacancyCriterion
 from tests.factories import build_init_data, max_user_payload
@@ -71,6 +77,11 @@ async def _other_user(role: UserRole) -> User:
         _candidate_ids
     )
     return await User.create(user_id=user_id, first_name="Другой", role=role)
+
+
+def _fresh_client() -> AsyncClient:
+    """Отдельная сессия: гостю и кандидату нельзя делить cookie с работодателем."""
+    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
 async def _vacancy(
@@ -177,91 +188,44 @@ async def _decide(client: AsyncClient, application: Application, **payload):
     )
 
 
-# --- Доступ к списку кандидатов --------------------------------------------
+# --- Доступ к списку кандидатов ----------------------------------------------
 
 
-async def test_candidates_require_session(client: AsyncClient) -> None:
-    employer = await _other_user(UserRole.EMPLOYER)
-    vacancy = await _vacancy(employer)
-
-    assert (await _candidates(client, vacancy)).status_code == 401
-
-
-async def test_candidates_require_employer_role(client: AsyncClient) -> None:
+async def test_candidates_list_access_and_guards(client: AsyncClient) -> None:
+    # 1. Без сессии список недоступен
     owner = await _other_user(UserRole.EMPLOYER)
-    vacancy = await _vacancy(owner)
+    guest_vacancy = await _vacancy(owner)
+    async with _fresh_client() as guest:
+        assert (await _candidates(guest, guest_vacancy)).status_code == 401
+
+    # 2. Кандидату список недоступен вовсе
     await _login(client, next(_candidate_ids), UserRole.CANDIDATE)
+    wrong_role = await _candidates(client, guest_vacancy)
+    assert wrong_role.status_code == 403
+    assert wrong_role.json()["error"]["code"] == "wrong_role"
 
-    response = await _candidates(client, vacancy)
+    # 3. Чужая вакансия — 404: существование чужих вакансий не раскрывается
+    await _application(guest_vacancy, await _candidate())
+    employer = await _employer(client)
+    foreign = await _candidates(client, guest_vacancy)
+    assert foreign.status_code == 404
+    assert foreign.json()["error"]["code"] == "vacancy_not_found"
 
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "wrong_role"
-
-
-async def test_foreign_vacancy_candidates_are_not_visible(
-    client: AsyncClient,
-) -> None:
-    """Чужая вакансия — 404: существование чужих вакансий не раскрывается."""
-    owner = await _other_user(UserRole.EMPLOYER)
-    vacancy = await _vacancy(owner)
-    await _application(vacancy, await _candidate())
-    await _employer(client)
-
-    response = await _candidates(client, vacancy)
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "vacancy_not_found"
-
-
-async def test_unknown_vacancy_returns_404(client: AsyncClient) -> None:
-    await _employer(client)
-
+    # 4. Несуществующая вакансия — тоже 404
     assert (
         await client.get("/api/employer/vacancies/999999/candidates")
     ).status_code == 404
 
-
-# --- Состав списка ----------------------------------------------------------
-
-
-async def test_only_candidates_past_screening_are_listed(
-    client: AsyncClient,
-) -> None:
-    """Не прошедших обязательную фильтрацию работодатель не разбирает."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    shown = await _application(vacancy, await _candidate())
-    for hidden_status in (
-        ApplicationStatus.CREATED,
-        ApplicationStatus.SCREENING,
-        ApplicationStatus.HARD_FILTER_FAILED,
-    ):
-        await _application(vacancy, await _candidate(), status=hidden_status)
-
-    body = (await _candidates(client, vacancy)).json()
-
-    assert body["total"] == 1
-    assert [item["application_id"] for item in body["items"]] == [shown.id]
+    # 5. Некорректная пагинация отклоняется
+    own_vacancy = await _vacancy(employer)
+    assert (await _candidates(client, own_vacancy, limit=0)).status_code == 422
+    assert (await _candidates(client, own_vacancy, offset=-1)).status_code == 422
 
 
-async def test_candidates_of_other_vacancy_are_not_mixed_in(
-    client: AsyncClient,
-) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    other_vacancy = await _vacancy(employer)
-    mine = await _application(vacancy, await _candidate())
-    await _application(other_vacancy, await _candidate())
-
-    body = (await _candidates(client, vacancy)).json()
-
-    assert [item["application_id"] for item in body["items"]] == [mine.id]
+# --- Состав списка -------------------------------------------------------------
 
 
-async def test_card_contains_profile_answers_and_hard_filters(
-    client: AsyncClient,
-) -> None:
-    """Раздел 34: состав стандартизированной карточки."""
+async def test_candidates_list_content(client: AsyncClient) -> None:
     employer = await _employer(client)
     vacancy = await _vacancy(
         employer,
@@ -272,12 +236,26 @@ async def test_card_contains_profile_answers_and_hard_filters(
         ],
         questions=[("Есть ли медкнижка?", ScreeningQuestionType.BOOLEAN)],
     )
+    other_vacancy = await _vacancy(employer)
+
+    # 1. Не прошедшие обязательную фильтрацию в списке не появляются
+    for hidden_status in (
+        ApplicationStatus.CREATED,
+        ApplicationStatus.SCREENING,
+        ApplicationStatus.HARD_FILTER_FAILED,
+    ):
+        await _application(vacancy, await _candidate(), status=hidden_status)
+    # Отклик по другой вакансии того же работодателя тоже не должен попасть
+    await _application(other_vacancy, await _candidate())
+
+    # 2. Карточка содержит ответы отбора и снимок обязательных фильтров
     application, _ = await _screened_application(client, vacancy, answers=[True])
     question = await ScreeningQuestion.get(vacancy_id=vacancy.id)
     await _relogin_employer(client, employer)
 
-    card = (await _candidates(client, vacancy)).json()["items"][0]
-
+    body = (await _candidates(client, vacancy)).json()
+    assert body["total"] == 1
+    card = body["items"][0]
     assert card["application_id"] == application.id
     assert card["status"] == ApplicationStatus.PASSED.value
     assert card["desired_role"] == "Бариста"
@@ -301,79 +279,74 @@ async def test_card_contains_profile_answers_and_hard_filters(
         {"type": "certificate", "required": True, "passed": None},
     ]
 
-
-async def test_card_does_not_expose_identity(client: AsyncClient) -> None:
-    """Раздел 34 перечисляет только рабочие факторы: имени и фото в карточке нет."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    candidate = await _candidate()
-    await User.filter(user_id=candidate.user_id).update(
+    # 3. Карточка не раскрывает личность: ни имени, ни фото
+    assert "Иван" not in str(body)
+    identified_candidate = await _candidate()
+    await User.filter(user_id=identified_candidate.user_id).update(
         first_name="Иван", last_name="Петров", avatar_path="/app/storage/a.png"
     )
-    await _application(vacancy, candidate)
+    await _application(vacancy, identified_candidate)
+    identity_body = (await _candidates(client, vacancy)).json()
+    assert "Иван" not in str(identity_body)
+    assert "Петров" not in str(identity_body)
+    assert "avatar" not in str(identity_body)
 
-    body = (await _candidates(client, vacancy)).json()
-
-    assert "Иван" not in str(body)
-    assert "Петров" not in str(body)
-    assert "avatar" not in str(body)
-
-
-async def test_card_without_profile_does_not_break_list(
-    client: AsyncClient,
-) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    candidate = await User.create(
+    # 4. Отсутствие профиля не ломает список — поля просто пустые
+    profileless = await User.create(
         user_id=next(_candidate_ids), first_name="Без профиля", role=UserRole.CANDIDATE
     )
-    await _application(vacancy, candidate)
+    profileless_application = await _application(vacancy, profileless)
+    profileless_card = next(
+        item
+        for item in (await _candidates(client, vacancy)).json()["items"]
+        if item["application_id"] == profileless_application.id
+    )
+    assert profileless_card["desired_role"] is None
+    assert profileless_card["salary"] is None
+    assert profileless_card["screening_answers"] == []
 
-    card = (await _candidates(client, vacancy)).json()["items"][0]
-
-    assert card["desired_role"] is None
-    assert card["salary"] is None
-    assert card["screening_answers"] == []
-
-
-async def test_candidates_pagination(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
+    # 5. Пагинация не пересекается и корректно считает total
+    pagination_vacancy = await _vacancy(employer)
     for _ in range(3):
-        await _application(vacancy, await _candidate())
-
-    first = (await _candidates(client, vacancy, limit=2, offset=0)).json()
-    second = (await _candidates(client, vacancy, limit=2, offset=2)).json()
-
-    assert first["total"] == 3 and second["total"] == 3
-    assert len(first["items"]) == 2 and len(second["items"]) == 1
-    first_ids = {item["application_id"] for item in first["items"]}
-    assert first_ids.isdisjoint(
-        {item["application_id"] for item in second["items"]}
+        await _application(pagination_vacancy, await _candidate())
+    first_page = (await _candidates(client, pagination_vacancy, limit=2, offset=0)).json()
+    second_page = (
+        await _candidates(client, pagination_vacancy, limit=2, offset=2)
+    ).json()
+    assert first_page["total"] == 3 and second_page["total"] == 3
+    assert len(first_page["items"]) == 2 and len(second_page["items"]) == 1
+    assert {item["application_id"] for item in first_page["items"]}.isdisjoint(
+        {item["application_id"] for item in second_page["items"]}
     )
 
+    # 6. Изменение профиля после отбора не переписывает уже снятый результат
+    await _login(client, application.candidate_id, UserRole.CANDIDATE)
+    changed = await client.patch("/api/candidate/profile", json={"schedule": "night"})
+    assert changed.status_code == 200, changed.text
+    await _relogin_employer(client, employer)
+    refreshed_card = next(
+        item for item in (await _candidates(client, vacancy)).json()["items"]
+        if item["application_id"] == application.id
+    )
+    assert refreshed_card["status"] == ApplicationStatus.PASSED.value
+    # Обязательные фильтры не пересчитываются задним числом
+    assert refreshed_card["hard_filters"][0] == {
+        "type": "schedule", "required": True, "passed": True,
+    }
+    # Данные профиля при этом живые: работодатель связывается с человеком
+    assert refreshed_card["schedule"] == "night"
 
-async def test_invalid_pagination_is_rejected(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
 
-    assert (await _candidates(client, vacancy, limit=0)).status_code == 422
-    assert (await _candidates(client, vacancy, offset=-1)).status_code == 422
+# --- Приглашение и взаимный интерес -------------------------------------------
 
 
-# --- Решение работодателя ---------------------------------------------------
-
-
-async def test_invite_moves_application_and_writes_decision(
-    client: AsyncClient,
-) -> None:
-    """Приглашение доводит отклик до взаимного интереса (разделы 26, 36)."""
+async def test_invite_flow(client: AsyncClient) -> None:
+    # 1. Приглашение переводит отклик во взаимный интерес и создаёт match
     employer = await _employer(client)
     vacancy = await _vacancy(employer)
     application = await _application(vacancy, await _candidate())
 
     response = await _decide(client, application, action="invited")
-
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == ApplicationStatus.MUTUAL_INTEREST.value
@@ -390,130 +363,198 @@ async def test_invite_moves_application_and_writes_decision(
     match = await Match.get(application_id=application.id)
     assert body["match_id"] == match.id
 
+    # 2. Аналитика: приглашение и создание match пишутся раздельно (раздел 60)
+    events = [
+        event
+        for event in await AnalyticsEvent.filter(user_id=employer.user_id).order_by("id")
+        if event.event_name != "notification_sent"
+    ]
+    assert [event.event_name for event in events] == [
+        "candidate_invited",
+        "match_created",
+    ]
+    assert events[1].payload == {
+        "match_id": match.id,
+        "application_id": application.id,
+        "vacancy_id": vacancy.id,
+    }
 
-async def test_reject_with_reason_is_saved(client: AsyncClient) -> None:
+    # 3. Повторное приглашение того же отклика отклоняется, match не дублируется
+    repeated = await _decide(client, application, action="invited")
+    assert repeated.status_code == 409
+    assert repeated.json()["error"]["code"] == "invalid_state_transition"
+    assert await Match.filter(application_id=application.id).count() == 1
+
+    # 4. Приглашённый кандидат виден в списке со статусом взаимного интереса
+    listed = (await _candidates(client, vacancy)).json()
+    assert listed["items"][0]["status"] == ApplicationStatus.MUTUAL_INTEREST.value
+
+    # 5. Приглашение остаётся возможным, даже если кандидат потом меняет профиль
+    other_vacancy = await _vacancy(
+        employer,
+        criteria=[(CriterionType.LOCATION, {"city": "Москва"}, True)],
+        questions=[("Есть ли медкнижка?", ScreeningQuestionType.BOOLEAN)],
+    )
+    screened, _ = await _screened_application(client, other_vacancy, answers=[True])
+    await client.patch("/api/candidate/profile", json={"city": "Казань"})
+    await _relogin_employer(client, employer)
+
+    late_invite = await _decide(client, screened, action="invited")
+    assert late_invite.status_code == 200, late_invite.text
+    assert late_invite.json()["status"] == ApplicationStatus.MUTUAL_INTEREST.value
+
+
+# --- Отказ ----------------------------------------------------------------------
+
+
+async def test_reject_flow(client: AsyncClient) -> None:
     employer = await _employer(client)
     vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
 
-    response = await _decide(
-        client, application, action="rejected", reject_reason="experience"
+    # 1. Отказ с причиной сохраняется, match не создаётся
+    with_reason = await _application(vacancy, await _candidate())
+    reason_response = await _decide(
+        client, with_reason, action="rejected", reject_reason="salary"
+    )
+    assert reason_response.status_code == 200, reason_response.text
+    assert reason_response.json()["status"] == ApplicationStatus.REJECTED.value
+    assert reason_response.json()["match_id"] is None
+    assert not await Match.filter(application_id=with_reason.id).exists()
+    reason_decision = await EmployerDecision.get(application_id=with_reason.id)
+    assert reason_decision.action == DecisionAction.REJECTED
+    assert reason_decision.reject_reason.value == "salary"
+
+    # 2. Причина отказа необязательна — раздел 20, P1 сделает её обязательной
+    without_reason = await _application(vacancy, await _candidate())
+    no_reason_response = await _decide(client, without_reason, action="rejected")
+    assert no_reason_response.status_code == 200, no_reason_response.text
+    no_reason_decision = await EmployerDecision.get(application_id=without_reason.id)
+    assert no_reason_decision.reject_reason is None
+
+    # 3. В P0 backend принимает только invited/rejected
+    reserved_target = await _application(vacancy, await _candidate())
+    reserved = await _decide(client, reserved_target, action="reserved")
+    assert reserved.status_code == 422
+    assert reserved.json()["error"]["code"] == "decision_action_not_supported"
+    await reserved_target.refresh_from_db()
+    assert reserved_target.status == ApplicationStatus.PASSED
+
+    # 4. Неизвестный action и причина без отказа — ошибки валидации
+    unknown_action_target = await _application(vacancy, await _candidate())
+    unknown_action = await _decide(client, unknown_action_target, action="maybe")
+    assert unknown_action.status_code == 422
+    assert unknown_action.json()["error"]["code"] == "validation_error"
+
+    reason_without_rejection_target = await _application(vacancy, await _candidate())
+    reason_without_rejection = await _decide(
+        client,
+        reason_without_rejection_target,
+        action="invited",
+        reject_reason="salary",
+    )
+    assert reason_without_rejection.status_code == 422
+    assert reason_without_rejection.json()["error"]["code"] == (
+        "reject_reason_not_applicable"
     )
 
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == ApplicationStatus.REJECTED.value
+    unknown_reason_target = await _application(vacancy, await _candidate())
+    unknown_reason = await _decide(
+        client, unknown_reason_target, action="rejected", reject_reason="не понравился"
+    )
+    assert unknown_reason.status_code == 422
 
-    decision = await EmployerDecision.get(application_id=application.id)
-    assert decision.action == DecisionAction.REJECTED
-    assert decision.reject_reason.value == "experience"
+    # 5. Список отражает новый статус, аналитика хранит причину отказа
+    listed = {
+        item["application_id"]: item["status"]
+        for item in (await _candidates(client, vacancy)).json()["items"]
+    }
+    assert listed[with_reason.id] == ApplicationStatus.REJECTED.value
+    assert listed[without_reason.id] == ApplicationStatus.REJECTED.value
 
-
-async def test_reject_without_reason_is_allowed(client: AsyncClient) -> None:
-    """Причина отказа — P1, в P0 колонка остаётся nullable."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
-
-    response = await _decide(client, application, action="rejected")
-
-    assert response.status_code == 200, response.text
-    decision = await EmployerDecision.get(application_id=application.id)
-    assert decision.reject_reason is None
-
-
-async def test_reserve_is_rejected_until_p1(client: AsyncClient) -> None:
-    """Раздел 20: в P0 backend принимает только `rejected` и `invited`."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
-
-    response = await _decide(client, application, action="reserved")
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "decision_action_not_supported"
-    await application.refresh_from_db()
-    assert application.status == ApplicationStatus.PASSED
-
-
-async def test_unknown_action_is_rejected(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
-
-    response = await _decide(client, application, action="maybe")
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "validation_error"
-
-
-async def test_reject_reason_without_rejection_is_refused(
-    client: AsyncClient,
-) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
-
-    response = await _decide(
-        client, application, action="invited", reject_reason="salary"
+    rejection_events = await AnalyticsEvent.filter(
+        user_id=employer.user_id, event_name="candidate_rejected"
+    ).order_by("id")
+    assert any(
+        event.payload.get("reject_reason") == "salary" for event in rejection_events
     )
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "reject_reason_not_applicable"
+
+# --- Предусловия и права на решение --------------------------------------------
 
 
-async def test_unknown_reject_reason_is_rejected(client: AsyncClient) -> None:
+async def test_decision_preconditions_and_guards(client: AsyncClient) -> None:
     employer = await _employer(client)
     vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
 
-    response = await _decide(
-        client, application, action="rejected", reject_reason="не понравился"
-    )
-
-    assert response.status_code == 422
-
-
-# --- Переходы статусов ------------------------------------------------------
-
-
-async def test_decision_before_screening_is_refused(client: AsyncClient) -> None:
-    """Из `screening` решение принимать нельзя: отбор ещё не пройден."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(
+    # 1. Из screening решение принимать нельзя: отбор ещё не пройден
+    in_screening = await _application(
         vacancy, await _candidate(), status=ApplicationStatus.SCREENING
     )
-
-    response = await _decide(client, application, action="invited")
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "invalid_state_transition"
-    assert response.json()["error"]["details"] == {
+    before_screening = await _decide(client, in_screening, action="invited")
+    assert before_screening.status_code == 409
+    assert before_screening.json()["error"]["code"] == "invalid_state_transition"
+    assert before_screening.json()["error"]["details"] == {
         "status": ApplicationStatus.SCREENING.value,
         "target": ApplicationStatus.INVITED.value,
     }
 
-
-async def test_decision_on_failed_screening_is_refused(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(
+    # 2. Провалившим обязательные фильтры — тоже нельзя
+    failed_filter = await _application(
         vacancy, await _candidate(), status=ApplicationStatus.HARD_FILTER_FAILED
     )
+    assert (await _decide(client, failed_filter, action="invited")).status_code == 409
 
-    assert (await _decide(client, application, action="invited")).status_code == 409
-
-
-async def test_decision_cannot_be_taken_twice(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
-    assert (await _decide(client, application, action="invited")).status_code == 200
-
-    repeated = await _decide(client, application, action="rejected")
-
+    # 3. Решение нельзя принять дважды
+    twice = await _application(vacancy, await _candidate())
+    assert (await _decide(client, twice, action="invited")).status_code == 200
+    repeated = await _decide(client, twice, action="rejected")
     assert repeated.status_code == 409
-    assert await EmployerDecision.filter(application_id=application.id).count() == 1
+    assert await EmployerDecision.filter(application_id=twice.id).count() == 1
+
+    # 4. Match, возникший в обход приглашения, блокирует решение целиком
+    conflicting = await _application(vacancy, await _candidate())
+    await Match.create(application_id=conflicting.id)
+    conflict = await _decide(client, conflicting, action="invited")
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "match_already_exists"
+    await conflicting.refresh_from_db()
+    assert conflicting.status == ApplicationStatus.PASSED
+    assert await EmployerDecision.filter(application_id=conflicting.id).count() == 0
+
+    # 5. Без сессии решение недоступно
+    unauthenticated_target = await _application(vacancy, await _candidate())
+    async with _fresh_client() as guest:
+        assert (
+            await _decide(guest, unauthenticated_target, action="invited")
+        ).status_code == 401
+
+    # 6. Кандидату решение недоступно вовсе
+    candidate_target_candidate = await _candidate()
+    candidate_target = await _application(vacancy, candidate_target_candidate)
+    async with _fresh_client() as as_candidate:
+        await _login(as_candidate, candidate_target_candidate.user_id, UserRole.CANDIDATE)
+        wrong_role = await _decide(as_candidate, candidate_target, action="invited")
+    assert wrong_role.status_code == 403
+    assert wrong_role.json()["error"]["code"] == "wrong_role"
+
+    # 7. Чужой отклик решить нельзя, и его статус не меняется
+    foreign_owner = await _other_user(UserRole.EMPLOYER)
+    foreign_vacancy = await _vacancy(foreign_owner)
+    foreign_application = await _application(foreign_vacancy, await _candidate())
+    foreign = await _decide(client, foreign_application, action="invited")
+    assert foreign.status_code == 404
+    assert foreign.json()["error"]["code"] == "application_not_found"
+    await foreign_application.refresh_from_db()
+    assert foreign_application.status == ApplicationStatus.PASSED
+
+    # 8. Несуществующий отклик — 404
+    unknown = await client.post(
+        "/api/applications/999999/decision", json={"action": "invited"}
+    )
+    assert unknown.status_code == 404
+
+
+# --- Конкурентность и гонки состояния (диагностика важнее компактности) -------
 
 
 async def test_concurrent_decisions_produce_one(client: AsyncClient) -> None:
@@ -536,105 +577,6 @@ async def test_concurrent_decisions_produce_one(client: AsyncClient) -> None:
     assert await Match.filter(application_id=application.id).count() == 1
     await application.refresh_from_db()
     assert application.status == ApplicationStatus.MUTUAL_INTEREST
-
-
-# --- Права на решение -------------------------------------------------------
-
-
-async def test_decision_requires_session(client: AsyncClient) -> None:
-    employer = await _other_user(UserRole.EMPLOYER)
-    vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
-
-    assert (await _decide(client, application, action="invited")).status_code == 401
-
-
-async def test_candidate_cannot_decide(client: AsyncClient) -> None:
-    owner = await _other_user(UserRole.EMPLOYER)
-    vacancy = await _vacancy(owner)
-    candidate = await _candidate()
-    application = await _application(vacancy, candidate)
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-
-    response = await _decide(client, application, action="invited")
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "wrong_role"
-
-
-async def test_foreign_application_cannot_be_decided(client: AsyncClient) -> None:
-    owner = await _other_user(UserRole.EMPLOYER)
-    vacancy = await _vacancy(owner)
-    application = await _application(vacancy, await _candidate())
-    await _employer(client)
-
-    response = await _decide(client, application, action="invited")
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "application_not_found"
-    await application.refresh_from_db()
-    assert application.status == ApplicationStatus.PASSED
-
-
-async def test_unknown_application_returns_404(client: AsyncClient) -> None:
-    await _employer(client)
-
-    response = await client.post(
-        "/api/applications/999999/decision", json={"action": "invited"}
-    )
-
-    assert response.status_code == 404
-
-
-# --- Аналитика --------------------------------------------------------------
-
-
-async def test_decision_writes_analytics_event(client: AsyncClient) -> None:
-    """Раздел 60: `candidate_invited` / `candidate_rejected` / `match_created`."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    invited = await _application(vacancy, await _candidate())
-    rejected = await _application(vacancy, await _candidate())
-
-    await _decide(client, invited, action="invited")
-    await _decide(client, rejected, action="rejected", reject_reason="salary")
-
-    # События доставки уведомлений сюда же попадают, но проверяются отдельно
-    events = [
-        event
-        for event in await AnalyticsEvent.filter(user_id=employer.user_id).order_by("id")
-        if event.event_name != "notification_sent"
-    ]
-    assert [event.event_name for event in events] == [
-        "candidate_invited",
-        "match_created",
-        "candidate_rejected",
-    ]
-    match = await Match.get(application_id=invited.id)
-    assert events[1].payload == {
-        "match_id": match.id,
-        "application_id": invited.id,
-        "vacancy_id": vacancy.id,
-    }
-    assert events[-1].payload["reject_reason"] == "salary"
-
-
-# --- Список после решения ---------------------------------------------------
-
-
-async def test_decided_candidate_stays_in_list_with_new_status(
-    client: AsyncClient,
-) -> None:
-    """Фронт обновляет список после решения и должен видеть новый статус."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
-    await _decide(client, application, action="rejected")
-
-    body = (await _candidates(client, vacancy)).json()
-
-    assert body["total"] == 1
-    assert body["items"][0]["status"] == ApplicationStatus.REJECTED.value
 
 
 async def test_stale_status_is_caught_under_lock(
@@ -691,122 +633,3 @@ async def test_pages_do_not_overlap_for_equal_applied_at(
 
     assert len(seen) == 4
     assert len(set(seen)) == 4
-
-
-async def test_card_keeps_screening_result_after_profile_change(
-    client: AsyncClient,
-) -> None:
-    """Кандидат прошёл отбор — работодатель видит его прошедшим.
-
-    Изменение профиля после отбора не переписывает результат обязательных
-    фильтров: иначе карточка противоречила бы статусу отклика.
-    """
-    employer = await _employer(client)
-    vacancy = await _vacancy(
-        employer,
-        criteria=[(CriterionType.SCHEDULE, {"schedule": "full_time"}, True)],
-        questions=[("Есть ли медкнижка?", ScreeningQuestionType.BOOLEAN)],
-    )
-    application, _ = await _screened_application(client, vacancy, answers=[True])
-    assert application.status == ApplicationStatus.PASSED
-
-    # Кандидат меняет график на тот, который вакансии не подходит
-    changed = await client.patch(
-        "/api/candidate/profile", json={"schedule": "night"}
-    )
-    assert changed.status_code == 200, changed.text
-    await _relogin_employer(client, employer)
-
-    card = (await _candidates(client, vacancy)).json()["items"][0]
-
-    assert card["status"] == ApplicationStatus.PASSED.value
-    assert card["hard_filters"] == [
-        {"type": "schedule", "required": True, "passed": True}
-    ]
-    # Данные профиля при этом живые: работодатель связывается с человеком,
-    # а не со слепком на момент отбора
-    assert card["schedule"] == "night"
-
-
-async def test_decision_still_possible_after_profile_change(
-    client: AsyncClient,
-) -> None:
-    """Прошедшего отбор кандидата можно пригласить, что бы он ни менял потом."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(
-        employer,
-        criteria=[(CriterionType.LOCATION, {"city": "Москва"}, True)],
-        questions=[("Есть ли медкнижка?", ScreeningQuestionType.BOOLEAN)],
-    )
-    application, _ = await _screened_application(client, vacancy, answers=[True])
-    await client.patch("/api/candidate/profile", json={"city": "Казань"})
-    await _relogin_employer(client, employer)
-
-    response = await _decide(client, application, action="invited")
-
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == ApplicationStatus.MUTUAL_INTEREST.value
-
-
-# --- Взаимный интерес -------------------------------------------------------
-
-
-async def test_rejection_does_not_create_match(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
-
-    response = await _decide(client, application, action="rejected")
-
-    assert response.json()["match_id"] is None
-    assert not await Match.filter(application_id=application.id).exists()
-
-
-async def test_match_is_created_once_per_application(client: AsyncClient) -> None:
-    """`matches.application_id` UNIQUE (раздел 55): второго match не бывает."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
-    assert (await _decide(client, application, action="invited")).status_code == 200
-
-    repeated = await _decide(client, application, action="invited")
-
-    assert repeated.status_code == 409
-    assert repeated.json()["error"]["code"] == "invalid_state_transition"
-    assert await Match.filter(application_id=application.id).count() == 1
-
-
-async def test_existing_match_blocks_invitation_and_rolls_back(
-    client: AsyncClient,
-) -> None:
-    """Расхождение данных не должно давать отклик без match или наоборот.
-
-    Match у отклика в `passed` появиться неоткуда — он создаётся только
-    приглашением. Если такой всё же есть, приглашение обязано отказать
-    целиком: решение не записывается, статус не меняется.
-    """
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
-    await Match.create(application_id=application.id)
-
-    response = await _decide(client, application, action="invited")
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "match_already_exists"
-    await application.refresh_from_db()
-    assert application.status == ApplicationStatus.PASSED
-    assert await EmployerDecision.filter(application_id=application.id).count() == 0
-
-
-async def test_invited_candidate_stays_in_list_with_mutual_interest(
-    client: AsyncClient,
-) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    application = await _application(vacancy, await _candidate())
-    await _decide(client, application, action="invited")
-
-    body = (await _candidates(client, vacancy)).json()
-
-    assert body["items"][0]["status"] == ApplicationStatus.MUTUAL_INTEREST.value

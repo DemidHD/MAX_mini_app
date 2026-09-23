@@ -1,7 +1,11 @@
 """Уведомления в MAX. Разделы 44, 46-50, 47 тех-доки.
 
 Проверяется и то, что уведомление уходит, и то, что его отсутствие или
-ошибка не ломают бизнес-операцию.
+ошибка не ломают бизнес-операцию. Все события одного happy path (отклик →
+отказ/приглашение → слот → бронирование) собраны в один сквозной сценарий.
+Тесты на надёжность доставки (retry, дубликаты, сбой транспорта) оставлены
+отдельными: у каждого свой транспорт и своя точка отказа, сливать их в общий
+поток — терять точную диагностику без выигрыша в количестве.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -118,140 +122,127 @@ async def _slot(vacancy: Vacancy, employer: User, hours: int = 24) -> InterviewS
     )
 
 
-# --- Отклик и решение работодателя ------------------------------------------
+# --- Сквозной поток событий: отклик → отказ/приглашение → слот → бронирование --
 
 
-async def test_application_created_notifies_employer(
+async def test_notification_events_flow(
     client: AsyncClient, notifications: RecordingTransport
 ) -> None:
     employer = await _employer(client)
     vacancy = await _vacancy(employer)
-    candidate = await _candidate(client)
 
+    # 1. Отклик уведомляет работодателя, но не самого кандидата
+    applicant = await _candidate(client)
     created = await client.post(f"/api/vacancies/{vacancy.id}/apply")
-
     assert created.status_code == 201, created.text
-    texts = notifications.texts_for(employer.user_id)
-    assert len(texts) == 1
-    assert "Новый отклик" in texts[0]
-    assert vacancy.title in texts[0]
-    assert notifications.texts_for(candidate.user_id) == []
-
-    log = await NotificationLog.get(
+    application_id = created.json()["id"]
+    apply_texts = notifications.texts_for(employer.user_id)
+    assert len(apply_texts) == 1
+    assert "Новый отклик" in apply_texts[0]
+    assert vacancy.title in apply_texts[0]
+    assert notifications.texts_for(applicant.user_id) == []
+    application_log = await NotificationLog.get(
         event_type=NotificationType.APPLICATION_CREATED,
-        entity_id=created.json()["id"],
+        entity_id=application_id,
         user_id=employer.user_id,
     )
-    assert log.status is NotificationStatus.SENT
-    assert log.attempts == 1
+    assert application_log.status is NotificationStatus.SENT
+    assert application_log.attempts == 1
 
-
-async def test_invitation_notifies_both_sides(
-    client: AsyncClient, notifications: RecordingTransport
-) -> None:
-    """Раздел 46: `candidate_invited` кандидату, `mutual_interest` обоим."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    candidate = await _candidate(client)
-    application = await _passed_application(vacancy, candidate)
-    await _login(client, employer.user_id, UserRole.EMPLOYER)
-
-    response = await client.post(
-        f"/api/applications/{application.id}/decision", json={"action": "invited"}
+    # 2. То же событие доставки пишется в аналитику (раздел 60)
+    delivery_event = await AnalyticsEvent.filter(
+        user_id=employer.user_id, event_name="notification_sent"
+    ).get()
+    assert delivery_event.payload["event_type"] == (
+        NotificationType.APPLICATION_CREATED.value
     )
+    assert delivery_event.payload["entity_id"] == application_id
+    notifications.clear()
 
-    assert response.status_code == 200, response.text
-    candidate_texts = notifications.texts_for(candidate.user_id)
+    # 3. Отказ решением не уведомляет кандидата — P1/P2, раздел 46
+    rejected_candidate = await _candidate(client)
+    rejected_application = await _passed_application(vacancy, rejected_candidate)
+    await _login(client, employer.user_id, UserRole.EMPLOYER)
+    await client.post(
+        f"/api/applications/{rejected_application.id}/decision",
+        json={"action": "rejected"},
+    )
+    assert notifications.texts_for(rejected_candidate.user_id) == []
+    notifications.clear()
+
+    # 4. Приглашение уведомляет обе стороны: кандидата дважды, работодателя один раз
+    invited_candidate = await _candidate(client)
+    invited_application = await _passed_application(vacancy, invited_candidate)
+    await _login(client, employer.user_id, UserRole.EMPLOYER)
+    invited = await client.post(
+        f"/api/applications/{invited_application.id}/decision",
+        json={"action": "invited"},
+    )
+    assert invited.status_code == 200, invited.text
+    candidate_texts = notifications.texts_for(invited_candidate.user_id)
     employer_texts = notifications.texts_for(employer.user_id)
     assert len(candidate_texts) == 2
     assert "пригласили" in candidate_texts[0]
     assert "Взаимный интерес" in candidate_texts[1]
     assert len(employer_texts) == 1
     assert "Взаимный интерес" in employer_texts[0]
-
-    match_id = response.json()["match_id"]
+    match_id = invited.json()["match_id"]
     assert await NotificationLog.filter(
         event_type=NotificationType.MUTUAL_INTEREST, entity_id=match_id
     ).count() == 2
+    notifications.clear()
 
-
-async def test_rejection_does_not_notify(
-    client: AsyncClient, notifications: RecordingTransport
-) -> None:
-    """`application_rejected` относится к P1/P2 (раздел 46)."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    candidate = await _candidate(client)
-    application = await _passed_application(vacancy, candidate)
-    await _login(client, employer.user_id, UserRole.EMPLOYER)
-
-    await client.post(
-        f"/api/applications/{application.id}/decision", json={"action": "rejected"}
-    )
-
-    assert notifications.texts_for(candidate.user_id) == []
-
-
-# --- Слоты и бронирование ---------------------------------------------------
-
-
-async def test_new_slot_notifies_waiting_candidates(
-    client: AsyncClient, notifications: RecordingTransport
-) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    waiting = await _candidate(client)
-    await _matched(vacancy, waiting)
-    # Кандидат без взаимного интереса времени не ждёт
+    # 5. Новый слот уведомляет только кандидатов со взаимным интересом
     uninterested = await _candidate(client)
     await _passed_application(vacancy, uninterested)
     await _login(client, employer.user_id, UserRole.EMPLOYER)
-    notifications.clear()
-
     starts_at = utcnow() + timedelta(days=1)
-    created = await client.post(
+    first_slot = await client.post(
         f"/api/vacancies/{vacancy.id}/slots",
         json={
             "starts_at": starts_at.isoformat(),
             "ends_at": (starts_at + timedelta(hours=1)).isoformat(),
         },
     )
-
-    assert created.status_code == 201, created.text
-    texts = notifications.texts_for(waiting.user_id)
-    assert len(texts) == 1
-    assert "время собеседования" in texts[0]
+    assert first_slot.status_code == 201, first_slot.text
+    slot_texts = notifications.texts_for(invited_candidate.user_id)
+    assert len(slot_texts) == 1
+    assert "время собеседования" in slot_texts[0]
     assert notifications.texts_for(uninterested.user_id) == []
 
-
-async def test_booking_notifies_both_sides_with_time(
-    client: AsyncClient, notifications: RecordingTransport
-) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    candidate = await _candidate(client)
-    match = await _matched(vacancy, candidate)
-    slot = await _slot(vacancy, employer)
+    # 6. Несколько слотов подряд не спамят кандидата повторными уведомлениями
+    for day in (2, 3, 4):
+        extra_starts_at = utcnow() + timedelta(days=day)
+        extra_slot = await client.post(
+            f"/api/vacancies/{vacancy.id}/slots",
+            json={
+                "starts_at": extra_starts_at.isoformat(),
+                "ends_at": (extra_starts_at + timedelta(hours=1)).isoformat(),
+            },
+        )
+        assert extra_slot.status_code == 201, extra_slot.text
+    assert len(notifications.texts_for(invited_candidate.user_id)) == 1
     notifications.clear()
 
+    # 7. Бронирование уведомляет обе стороны временем собеседования
+    await _login(client, invited_candidate.user_id, UserRole.CANDIDATE)
+    slot_id = first_slot.json()["id"]
     booked = await client.post(
-        f"/api/matches/{match.id}/book", json={"slot_id": slot.id}
+        f"/api/matches/{match_id}/book", json={"slot_id": slot_id}
     )
-
     assert booked.status_code == 201, booked.text
-    moment = messages.format_moment(slot.starts_at)
-    candidate_texts = notifications.texts_for(candidate.user_id)
-    employer_texts = notifications.texts_for(employer.user_id)
-    assert len(candidate_texts) == 1 and moment in candidate_texts[0]
-    assert len(employer_texts) == 1 and moment in employer_texts[0]
-
-    interview = await Interview.get(match_id=match.id)
+    moment = messages.format_moment((await InterviewSlot.get(id=slot_id)).starts_at)
+    booked_candidate_texts = notifications.texts_for(invited_candidate.user_id)
+    booked_employer_texts = notifications.texts_for(employer.user_id)
+    assert len(booked_candidate_texts) == 1 and moment in booked_candidate_texts[0]
+    assert len(booked_employer_texts) == 1 and moment in booked_employer_texts[0]
+    interview = await Interview.get(match_id=match_id)
     assert await NotificationLog.filter(
         event_type=NotificationType.INTERVIEW_BOOKED, entity_id=interview.id
     ).count() == 2
 
 
-# --- Надёжность -------------------------------------------------------------
+# --- Надёжность доставки (диагностика важнее компактности) --------------------
 
 
 async def test_notification_failure_does_not_cancel_interview(
@@ -294,7 +285,7 @@ async def test_temporary_error_is_retried(
     monkeypatch.setattr(settings, "notification_retry_delay_seconds", 0)
     employer = await _employer(client)
     vacancy = await _vacancy(employer)
-    candidate = await _candidate(client)
+    await _candidate(client)
     notifications.fail_first = 1
 
     created = await client.post(f"/api/vacancies/{vacancy.id}/apply")
@@ -398,69 +389,21 @@ async def test_broken_notification_service_does_not_break_apply(
     assert await Application.filter(id=created.json()["id"]).exists()
 
 
-async def test_delivery_is_logged_in_analytics(
-    client: AsyncClient, notifications: RecordingTransport
-) -> None:
-    """Раздел 60: `notification_sent`."""
-    employer = await _employer(client)
-
-    await notification_service.application_created(
-        employer_id=employer.user_id, application_id=4545, vacancy_title="Бариста"
-    )
-
-    event = await AnalyticsEvent.filter(
-        user_id=employer.user_id, event_name="notification_sent"
-    ).get()
-    assert event.payload["event_type"] == NotificationType.APPLICATION_CREATED.value
-    assert event.payload["entity_id"] == 4545
+# --- Тексты сообщений -----------------------------------------------------------
 
 
-# --- Тексты -----------------------------------------------------------------
-
-
-async def test_moment_is_formatted_in_user_timezone(monkeypatch) -> None:
-    """Время хранится в UTC, а показывается в поясе пользователя продукта."""
+async def test_message_formatting(monkeypatch) -> None:
+    # 1. Время хранится в UTC, а показывается в поясе пользователя продукта
     monkeypatch.setattr(settings, "notification_timezone", "Europe/Moscow")
     moment = datetime(2026, 10, 1, 9, 30, tzinfo=timezone.utc)
-
     assert messages.format_moment(moment) == "1 октября, 12:30 (МСК)"
 
-
-async def test_unknown_timezone_falls_back_to_utc(monkeypatch) -> None:
+    # 2. Неизвестный часовой пояс — откат на UTC
     monkeypatch.setattr(settings, "notification_timezone", "Mars/Olympus")
-    moment = datetime(2026, 10, 1, 9, 30, tzinfo=timezone.utc)
-
     assert messages.format_moment(moment) == "1 октября, 09:30 (UTC)"
 
-
-async def test_messages_contain_mini_app_links(monkeypatch) -> None:
+    # 3. Ссылки на Mini App собираются из app_url
     monkeypatch.setattr(settings, "app_url", "https://example.com/")
-
     assert messages.employer_home_url() == "https://example.com/employer"
     assert messages.application_url(7) == "https://example.com/candidate/applications/7"
     assert "https://example.com/" in messages.bot_greeting()
-
-
-async def test_several_slots_do_not_spam_candidate(
-    client: AsyncClient, notifications: RecordingTransport
-) -> None:
-    """Раздел 46: событие — «работодатель предоставил время», а не каждый слот."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    waiting = await _candidate(client)
-    await _matched(vacancy, waiting)
-    await _login(client, employer.user_id, UserRole.EMPLOYER)
-    notifications.clear()
-
-    for day in (1, 2, 3):
-        starts_at = utcnow() + timedelta(days=day)
-        created = await client.post(
-            f"/api/vacancies/{vacancy.id}/slots",
-            json={
-                "starts_at": starts_at.isoformat(),
-                "ends_at": (starts_at + timedelta(hours=1)).isoformat(),
-            },
-        )
-        assert created.status_code == 201, created.text
-
-    assert len(notifications.texts_for(waiting.user_id)) == 1

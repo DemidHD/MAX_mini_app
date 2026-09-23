@@ -3,6 +3,12 @@
 `POST /api/vacancies/{id}/slots`, `GET /api/vacancies/{id}/slots`,
 `DELETE /api/vacancies/{id}/slots/{slot_id}`, `POST /api/matches/{id}/book`.
 Разделы 22, 23, 26, 36, 37, 56, 57, 79 тех-доки.
+
+Guard'ы, валидация и happy path каждой ручки собраны в сквозные сценарии по
+одной функции на группу — с пронумерованными шагами, как в `test_p0_e2e.py`.
+Конкурентные и гоночные сценарии (`asyncio.gather`, два клиента наперегонки)
+оставлены отдельными тестами: там диагностика конкретной гонки важнее
+компактности.
 """
 
 import asyncio
@@ -177,9 +183,7 @@ async def _cancel_slot(client: AsyncClient, vacancy: Vacancy, slot_id: int):
 
 
 async def _book(client: AsyncClient, match: Match, slot_id: int):
-    return await client.post(
-        f"/api/matches/{match.id}/book", json={"slot_id": slot_id}
-    )
+    return await client.post(f"/api/matches/{match.id}/book", json={"slot_id": slot_id})
 
 
 def _fresh_client() -> AsyncClient:
@@ -187,151 +191,115 @@ def _fresh_client() -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
-# --- Создание слота ---------------------------------------------------------
+# --- Создание слота: guard'ы и валидация -------------------------------------
 
 
-async def test_slot_creation_requires_session(client: AsyncClient) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-
-    response = await _create_slot(
-        client, vacancy, starts_at=_at(days=1), ends_at=_at(days=1, hours=1)
+async def test_slot_creation_guards_and_validation(client: AsyncClient) -> None:
+    # 1. Без сессии, с чужой ролью и на чужую вакансию — создать нельзя
+    foreign_owner = await _other_employer()
+    foreign_vacancy = await _vacancy(foreign_owner)
+    no_session = await _create_slot(
+        client, foreign_vacancy, starts_at=_at(days=1), ends_at=_at(days=1, hours=1)
     )
+    assert no_session.status_code == 401
 
-    assert response.status_code == 401
-
-
-async def test_candidate_cannot_create_slot(client: AsyncClient) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
     await _login(client, next(_candidate_ids), UserRole.CANDIDATE)
-
-    response = await _create_slot(
-        client, vacancy, starts_at=_at(days=1), ends_at=_at(days=1, hours=1)
+    wrong_role = await _create_slot(
+        client, foreign_vacancy, starts_at=_at(days=1), ends_at=_at(days=1, hours=1)
     )
+    assert wrong_role.status_code == 403
+    assert wrong_role.json()["error"]["code"] == "wrong_role"
 
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "wrong_role"
-
-
-async def test_slot_cannot_be_created_for_foreign_vacancy(
-    client: AsyncClient,
-) -> None:
-    vacancy = await _vacancy(await _other_employer())
-    await _employer(client)
-
-    response = await _create_slot(
-        client, vacancy, starts_at=_at(days=1), ends_at=_at(days=1, hours=1)
-    )
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "vacancy_not_found"
-    assert not await InterviewSlot.filter(vacancy_id=vacancy.id).exists()
-
-
-async def test_slot_is_created(client: AsyncClient) -> None:
     employer = await _employer(client)
+    foreign = await _create_slot(
+        client, foreign_vacancy, starts_at=_at(days=1), ends_at=_at(days=1, hours=1)
+    )
+    assert foreign.status_code == 404
+    assert foreign.json()["error"]["code"] == "vacancy_not_found"
+    assert not await InterviewSlot.filter(vacancy_id=foreign_vacancy.id).exists()
+
+    # 2. Слот создаётся из данных сессии, а не тела запроса
     vacancy = await _vacancy(employer)
     starts_at = _at(days=1)
-
-    response = await _create_slot(
+    created = await _create_slot(
         client, vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(hours=1)
     )
-
-    assert response.status_code == 201, response.text
-    body = response.json()
+    assert created.status_code == 201, created.text
+    body = created.json()
     assert body["vacancy_id"] == vacancy.id
     assert body["status"] == InterviewSlotStatus.AVAILABLE.value
-
     slot = await InterviewSlot.get(id=body["id"])
-    # Работодатель берётся из сессии, а не из тела запроса
     assert slot.employer_id == employer.user_id
     assert slot.starts_at == starts_at
     assert slot.ends_at == starts_at + timedelta(hours=1)
 
-
-async def test_slot_without_timezone_is_rejected(client: AsyncClient) -> None:
-    """Без смещения непонятно, в каком поясе назначено собеседование."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-
-    response = await client.post(
+    # 3. Без смещения часового пояса — отклонено
+    no_timezone = await client.post(
         f"/api/vacancies/{vacancy.id}/slots",
         json={"starts_at": "2026-10-01T10:00:00", "ends_at": "2026-10-01T11:00:00"},
     )
+    assert no_timezone.status_code == 422
+    assert no_timezone.json()["error"]["code"] == "validation_error"
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "validation_error"
-
-
-async def test_slot_with_offset_is_stored_in_utc(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
+    # 4. Время со смещением приводится к UTC при сохранении
     moscow_day = (utcnow() + timedelta(days=2)).strftime("%Y-%m-%d")
-
-    response = await client.post(
+    offset_response = await client.post(
         f"/api/vacancies/{vacancy.id}/slots",
         json={
             "starts_at": f"{moscow_day}T12:00:00+03:00",
             "ends_at": f"{moscow_day}T13:00:00+03:00",
         },
     )
+    assert offset_response.status_code == 201, offset_response.text
+    offset_slot = await InterviewSlot.get(id=offset_response.json()["id"])
+    assert offset_slot.starts_at.hour == 9
+    assert offset_slot.starts_at.utcoffset() == timedelta(0)
 
-    assert response.status_code == 201, response.text
-    slot = await InterviewSlot.get(id=response.json()["id"])
-    assert slot.starts_at.hour == 9
-    assert slot.starts_at.utcoffset() == timedelta(0)
-
-
-async def test_slot_ending_before_start_is_rejected(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    starts_at = _at(days=1)
-
-    response = await _create_slot(
+    # 5. Конец раньше начала и время в прошлом — отклонены
+    ending_before_start = await _create_slot(
         client, vacancy, starts_at=starts_at, ends_at=starts_at - timedelta(minutes=30)
     )
+    assert ending_before_start.status_code == 422
+    assert ending_before_start.json()["error"]["code"] == "slot_interval_invalid"
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "slot_interval_invalid"
-
-
-async def test_slot_in_past_is_rejected(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    starts_at = utcnow() - timedelta(hours=2)
-
-    response = await _create_slot(
-        client, vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(hours=1)
+    past_starts_at = utcnow() - timedelta(hours=2)
+    in_past = await _create_slot(
+        client,
+        vacancy,
+        starts_at=past_starts_at,
+        ends_at=past_starts_at + timedelta(hours=1),
     )
+    assert in_past.status_code == 422
+    assert in_past.json()["error"]["code"] == "slot_in_past"
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "slot_in_past"
-
-
-async def test_too_short_and_too_long_slots_are_rejected(
-    client: AsyncClient,
-) -> None:
-    """Границы длительности вне тех-доки и заданы конфигурацией."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    starts_at = _at(days=1)
-
+    # 6. Границы длительности заданы конфигурацией: слишком короткий и
+    # слишком длинный слот отклонены, ничего не создаётся
+    duration_vacancy = await _vacancy(employer)
+    duration_starts_at = _at(days=1)
     short = await _create_slot(
-        client, vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(minutes=1)
+        client,
+        duration_vacancy,
+        starts_at=duration_starts_at,
+        ends_at=duration_starts_at + timedelta(minutes=1),
     )
     long = await _create_slot(
-        client, vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(hours=9)
+        client,
+        duration_vacancy,
+        starts_at=duration_starts_at,
+        ends_at=duration_starts_at + timedelta(hours=9),
     )
-
     assert short.status_code == 422
     assert short.json()["error"]["code"] == "slot_too_short"
     assert long.status_code == 422
     assert long.json()["error"]["code"] == "slot_too_long"
-    assert not await InterviewSlot.filter(vacancy_id=vacancy.id).exists()
+    assert not await InterviewSlot.filter(vacancy_id=duration_vacancy.id).exists()
 
 
-async def test_overlapping_slot_is_rejected(client: AsyncClient) -> None:
+# --- Создание слота: пересечения ---------------------------------------------
+
+
+async def test_slot_overlap_rules(client: AsyncClient) -> None:
+    # 1. Пересекающийся слот отклоняется с указанием, с каким слотом конфликт
     employer = await _employer(client)
     vacancy = await _vacancy(employer)
     starts_at = _at(days=1)
@@ -339,95 +307,66 @@ async def test_overlapping_slot_is_rejected(client: AsyncClient) -> None:
         client, vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(hours=1)
     )
     assert first.status_code == 201, first.text
-
-    response = await _create_slot(
+    overlapping = await _create_slot(
         client,
         vacancy,
         starts_at=starts_at + timedelta(minutes=30),
         ends_at=starts_at + timedelta(minutes=90),
     )
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "slot_overlaps"
-    assert response.json()["error"]["details"]["slot_id"] == first.json()["id"]
+    assert overlapping.status_code == 409
+    assert overlapping.json()["error"]["code"] == "slot_overlaps"
+    assert overlapping.json()["error"]["details"]["slot_id"] == first.json()["id"]
     assert await InterviewSlot.filter(vacancy_id=vacancy.id).count() == 1
 
-
-async def test_overlap_is_checked_across_employer_vacancies(
-    client: AsyncClient,
-) -> None:
-    """Работодатель не может вести два собеседования одновременно."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
+    # 2. Пересечение проверяется по работодателю, а не по вакансии: он не
+    # может вести два собеседования одновременно даже на разных вакансиях
     other_vacancy = await _vacancy(employer)
-    starts_at = _at(days=1)
-    assert (
-        await _create_slot(
-            client, vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(hours=1)
-        )
-    ).status_code == 201
+    cross_vacancy = await _create_slot(
+        client, other_vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(hours=1)
+    )
+    assert cross_vacancy.status_code == 409
+    assert cross_vacancy.json()["error"]["code"] == "slot_overlaps"
 
-    response = await _create_slot(
+    # 3. Слоты другого работодателя не мешают, даже если время совпадает
+    isolated_vacancy = await _vacancy(employer)
+    isolated_starts_at = _at(days=10)
+    other_employer = await _other_employer()
+    other_employer_vacancy = await _vacancy(other_employer)
+    await _slot(other_employer_vacancy, other_employer, starts_at=isolated_starts_at)
+    not_blocked = await _create_slot(
         client,
-        other_vacancy,
-        starts_at=starts_at,
-        ends_at=starts_at + timedelta(hours=1),
+        isolated_vacancy,
+        starts_at=isolated_starts_at,
+        ends_at=isolated_starts_at + timedelta(hours=1),
     )
+    assert not_blocked.status_code == 201, not_blocked.text
 
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "slot_overlaps"
-
-
-async def test_slots_of_other_employer_do_not_block(client: AsyncClient) -> None:
-    other = await _other_employer()
-    other_vacancy = await _vacancy(other)
-    starts_at = _at(days=1)
-    await _slot(other_vacancy, other, starts_at=starts_at)
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-
-    response = await _create_slot(
-        client, vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(hours=1)
-    )
-
-    assert response.status_code == 201, response.text
-
-
-async def test_adjacent_slots_are_allowed(client: AsyncClient) -> None:
-    """Слот, начинающийся ровно в момент окончания предыдущего, не пересекается."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    starts_at = _at(days=1)
-    assert (
-        await _create_slot(
-            client, vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(hours=1)
-        )
-    ).status_code == 201
-
-    response = await _create_slot(
+    # 4. Слот, начинающийся ровно в момент окончания предыдущего, не пересекается
+    adjacent = await _create_slot(
         client,
         vacancy,
         starts_at=starts_at + timedelta(hours=1),
         ends_at=starts_at + timedelta(hours=2),
     )
-
-    assert response.status_code == 201, response.text
+    assert adjacent.status_code == 201, adjacent.text
     assert await InterviewSlot.filter(vacancy_id=vacancy.id).count() == 2
 
-
-async def test_cancelled_slot_does_not_block_new_one(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    starts_at = _at(days=1)
+    # 5. Отменённый слот не блокирует создание нового на то же время
+    cancelled_vacancy = await _vacancy(employer)
+    cancelled_starts_at = _at(days=3)
     await _slot(
-        vacancy, employer, starts_at=starts_at, status=InterviewSlotStatus.CANCELLED
+        cancelled_vacancy,
+        employer,
+        starts_at=cancelled_starts_at,
+        status=InterviewSlotStatus.CANCELLED,
     )
-
-    response = await _create_slot(
-        client, vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(hours=1)
+    after_cancelled = await _create_slot(
+        client,
+        cancelled_vacancy,
+        starts_at=cancelled_starts_at,
+        ends_at=cancelled_starts_at + timedelta(hours=1),
     )
-
-    assert response.status_code == 201, response.text
+    assert after_cancelled.status_code == 201, after_cancelled.text
 
 
 async def test_concurrent_overlapping_slots_produce_one(client: AsyncClient) -> None:
@@ -439,10 +378,7 @@ async def test_concurrent_overlapping_slots_produce_one(client: AsyncClient) -> 
     responses = await asyncio.gather(
         *[
             _create_slot(
-                client,
-                vacancy,
-                starts_at=starts_at,
-                ends_at=starts_at + timedelta(hours=1),
+                client, vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(hours=1)
             )
             for _ in range(4)
         ]
@@ -453,10 +389,11 @@ async def test_concurrent_overlapping_slots_produce_one(client: AsyncClient) -> 
     assert await InterviewSlot.filter(vacancy_id=vacancy.id).count() == 1
 
 
-# --- Чтение слотов ----------------------------------------------------------
+# --- Чтение слотов -------------------------------------------------------------
 
 
-async def test_employer_sees_own_slots_including_booked(client: AsyncClient) -> None:
+async def test_slot_listing(client: AsyncClient) -> None:
+    # 1. Работодатель видит свои слоты, включая забронированные, но не отменённые
     employer = await _employer(client)
     vacancy = await _vacancy(employer)
     later = await _slot(vacancy, employer, starts_at=_at(days=2))
@@ -466,155 +403,112 @@ async def test_employer_sees_own_slots_including_booked(client: AsyncClient) -> 
     await _slot(
         vacancy, employer, starts_at=_at(days=3), status=InterviewSlotStatus.CANCELLED
     )
+    own_view = (await _list_slots(client, vacancy)).json()
+    assert [item["id"] for item in own_view["items"]] == [earlier.id, later.id]
+    assert own_view["items"][0]["status"] == InterviewSlotStatus.BOOKED.value
+    assert own_view["match_id"] is None
 
-    body = (await _list_slots(client, vacancy)).json()
-
-    # Отменённые слоты не показываются, порядок — по времени начала
-    assert [item["id"] for item in body["items"]] == [earlier.id, later.id]
-    assert body["items"][0]["status"] == InterviewSlotStatus.BOOKED.value
-    assert body["match_id"] is None
-
-
-async def test_employer_does_not_see_foreign_slots(client: AsyncClient) -> None:
+    # 2. Чужие слоты работодателю не видны
     other = await _other_employer()
-    vacancy = await _vacancy(other)
-    await _slot(vacancy, other)
-    await _employer(client)
+    foreign_vacancy = await _vacancy(other)
+    await _slot(foreign_vacancy, other)
+    foreign = await _list_slots(client, foreign_vacancy)
+    assert foreign.status_code == 404
+    assert foreign.json()["error"]["code"] == "vacancy_not_found"
 
-    response = await _list_slots(client, vacancy)
+    # 3. Кандидату без взаимного интереса слоты не видны
+    no_match_vacancy = await _vacancy(other)
+    await _slot(no_match_vacancy, other)
+    no_match_candidate = await _candidate()
+    await _application(
+        no_match_vacancy, no_match_candidate, status=ApplicationStatus.PASSED
+    )
+    await _login(client, no_match_candidate.user_id, UserRole.CANDIDATE)
+    no_match = await _list_slots(client, no_match_vacancy)
+    assert no_match.status_code == 403
+    assert no_match.json()["error"]["code"] == "match_required"
 
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "vacancy_not_found"
-
-
-async def test_candidate_without_match_cannot_see_slots(
-    client: AsyncClient,
-) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    await _slot(vacancy, employer)
-    candidate = await _candidate()
-    await _application(vacancy, candidate, status=ApplicationStatus.PASSED)
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-
-    response = await _list_slots(client, vacancy)
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "match_required"
-
-
-async def test_candidate_sees_only_free_future_slots(client: AsyncClient) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    free = await _slot(vacancy, employer, starts_at=_at(days=1))
+    # 4. Кандидату со взаимным интересом видны только свободные будущие слоты
+    matched_vacancy = await _vacancy(other)
+    free = await _slot(matched_vacancy, other, starts_at=_at(days=1))
     await _slot(
-        vacancy, employer, starts_at=_at(days=2), status=InterviewSlotStatus.BOOKED
+        matched_vacancy, other, starts_at=_at(days=2), status=InterviewSlotStatus.BOOKED
     )
     await _slot(
-        vacancy, employer, starts_at=_at(days=3), status=InterviewSlotStatus.CANCELLED
+        matched_vacancy,
+        other,
+        starts_at=_at(days=3),
+        status=InterviewSlotStatus.CANCELLED,
     )
-    await _slot(vacancy, employer, starts_at=utcnow() - timedelta(hours=1))
-    match, _, candidate = await _matched(vacancy)
+    await _slot(matched_vacancy, other, starts_at=utcnow() - timedelta(hours=1))
+    match, _, candidate = await _matched(matched_vacancy)
     await _login(client, candidate.user_id, UserRole.CANDIDATE)
-
-    body = (await _list_slots(client, vacancy)).json()
-
+    body = (await _list_slots(client, matched_vacancy)).json()
     assert [item["id"] for item in body["items"]] == [free.id]
     assert body["match_id"] == match.id
     assert body["interviews"] == []
 
-
-async def test_candidate_slot_view_is_logged(client: AsyncClient) -> None:
-    """Раздел 60: `slot_viewed`."""
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    await _slot(vacancy, employer)
-    match, _, candidate = await _matched(vacancy)
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-
-    await _list_slots(client, vacancy)
-
+    # 5. Просмотр слотов кандидатом логируется аналитикой (раздел 60)
     event = await AnalyticsEvent.filter(
         user_id=candidate.user_id, event_name="slot_viewed"
     ).get()
     assert event.payload == {
-        "vacancy_id": vacancy.id,
+        "vacancy_id": matched_vacancy.id,
         "match_id": match.id,
         "slots": 1,
     }
 
+    # 6. Несуществующая вакансия и не выбранная роль — тоже ошибки
+    unknown = await client.get("/api/vacancies/999999/slots")
+    assert unknown.status_code == 404
+    assert unknown.json()["error"]["code"] == "vacancy_not_found"
 
-async def test_slots_of_unknown_vacancy_return_404(client: AsyncClient) -> None:
-    await _login(client, next(_candidate_ids), UserRole.CANDIDATE)
-
-    response = await client.get("/api/vacancies/999999/slots")
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "vacancy_not_found"
-
-
-async def test_slots_require_selected_role(client: AsyncClient) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    user_id = next(_candidate_ids)
+    roleless_id = next(_candidate_ids)
     await client.post(
         "/api/auth/max",
-        json={"init_data": build_init_data(user=max_user_payload(user_id=user_id))},
+        json={"init_data": build_init_data(user=max_user_payload(user_id=roleless_id))},
     )
-
-    response = await _list_slots(client, vacancy)
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "role_not_selected"
+    no_role = await _list_slots(client, matched_vacancy)
+    assert no_role.status_code == 403
+    assert no_role.json()["error"]["code"] == "role_not_selected"
 
 
-# --- Отмена слота -----------------------------------------------------------
+# --- Отмена слота ---------------------------------------------------------------
 
 
-async def test_slot_is_cancelled_and_hidden(client: AsyncClient) -> None:
+async def test_slot_cancellation(client: AsyncClient) -> None:
+    # 1. Отмена скрывает слот из списка
     employer = await _employer(client)
     vacancy = await _vacancy(employer)
     slot = await _slot(vacancy, employer)
-
-    response = await _cancel_slot(client, vacancy, slot.id)
-
-    assert response.status_code == 204
+    cancelled = await _cancel_slot(client, vacancy, slot.id)
+    assert cancelled.status_code == 204
     await slot.refresh_from_db()
     assert slot.status is InterviewSlotStatus.CANCELLED
     assert (await _list_slots(client, vacancy)).json()["items"] == []
 
+    # 2. Повторная отмена — не ошибка
+    already_cancelled = await _slot(
+        vacancy, employer, status=InterviewSlotStatus.CANCELLED
+    )
+    assert (
+        await _cancel_slot(client, vacancy, already_cancelled.id)
+    ).status_code == 204
 
-async def test_repeated_cancel_is_not_an_error(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer, status=InterviewSlotStatus.CANCELLED)
+    # 3. Забронированный слот отменить нельзя
+    booked = await _slot(vacancy, employer, status=InterviewSlotStatus.BOOKED)
+    booked_response = await _cancel_slot(client, vacancy, booked.id)
+    assert booked_response.status_code == 409
+    assert booked_response.json()["error"]["code"] == "slot_booked"
+    await booked.refresh_from_db()
+    assert booked.status is InterviewSlotStatus.BOOKED
 
-    assert (await _cancel_slot(client, vacancy, slot.id)).status_code == 204
-
-
-async def test_booked_slot_cannot_be_cancelled(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer, status=InterviewSlotStatus.BOOKED)
-
-    response = await _cancel_slot(client, vacancy, slot.id)
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "slot_booked"
-    await slot.refresh_from_db()
-    assert slot.status is InterviewSlotStatus.BOOKED
-
-
-async def test_foreign_slot_cannot_be_cancelled(client: AsyncClient) -> None:
+    # 4. Чужой слот нельзя отменить ни через свою, ни через чужую вакансию
     other = await _other_employer()
     foreign_vacancy = await _vacancy(other)
     foreign_slot = await _slot(foreign_vacancy, other)
-    employer = await _employer(client)
-    own_vacancy = await _vacancy(employer)
-
-    by_own_vacancy = await _cancel_slot(client, own_vacancy, foreign_slot.id)
+    by_own_vacancy = await _cancel_slot(client, vacancy, foreign_slot.id)
     by_foreign_vacancy = await _cancel_slot(client, foreign_vacancy, foreign_slot.id)
-
     assert by_own_vacancy.status_code == 404
     assert by_own_vacancy.json()["error"]["code"] == "slot_not_found"
     assert by_foreign_vacancy.status_code == 404
@@ -622,36 +516,27 @@ async def test_foreign_slot_cannot_be_cancelled(client: AsyncClient) -> None:
     await foreign_slot.refresh_from_db()
     assert foreign_slot.status is InterviewSlotStatus.AVAILABLE
 
-
-async def test_candidate_cannot_cancel_slot(client: AsyncClient) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer)
+    # 5. Кандидату отмена недоступна вовсе
+    candidate_target = await _slot(vacancy, employer)
     await _login(client, next(_candidate_ids), UserRole.CANDIDATE)
-
-    response = await _cancel_slot(client, vacancy, slot.id)
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "wrong_role"
+    candidate_response = await _cancel_slot(client, vacancy, candidate_target.id)
+    assert candidate_response.status_code == 403
+    assert candidate_response.json()["error"]["code"] == "wrong_role"
 
 
-# --- Бронирование -----------------------------------------------------------
+# --- Бронирование: happy path и идемпотентность ---------------------------------
 
 
-async def test_booking_creates_interview_and_moves_application(
-    client: AsyncClient,
-) -> None:
-    """Раздел 56: слот занят, собеседование создано, отклик переведён."""
+async def test_booking_happy_path_and_idempotency(client: AsyncClient) -> None:
+    # 1. Бронирование создаёт собеседование и переводит отклик (раздел 56)
     employer = await _other_employer()
     vacancy = await _vacancy(employer)
     slot = await _slot(vacancy, employer)
     match, application, candidate = await _matched(vacancy)
     await _login(client, candidate.user_id, UserRole.CANDIDATE)
-
-    response = await _book(client, match, slot.id)
-
-    assert response.status_code == 201, response.text
-    body = response.json()
+    booked = await _book(client, match, slot.id)
+    assert booked.status_code == 201, booked.text
+    body = booked.json()
     assert body["match_id"] == match.id
     assert body["application_id"] == application.id
     assert body["vacancy_id"] == vacancy.id
@@ -659,7 +544,6 @@ async def test_booking_creates_interview_and_moves_application(
     assert body["application_status"] == ApplicationStatus.INTERVIEW_SCHEDULED.value
     assert body["slot"]["id"] == slot.id
     assert body["slot"]["status"] == InterviewSlotStatus.BOOKED.value
-
     await slot.refresh_from_db()
     assert slot.status is InterviewSlotStatus.BOOKED
     await application.refresh_from_db()
@@ -667,62 +551,146 @@ async def test_booking_creates_interview_and_moves_application(
     interview = await Interview.get(match_id=match.id)
     assert interview.slot_id == slot.id
 
-
-async def test_booking_is_idempotent(client: AsyncClient) -> None:
-    """Раздел 79: повтор запроса не создаёт второе собеседование."""
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer)
-    match, _, candidate = await _matched(vacancy)
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-    first = await _book(client, match, slot.id)
-    assert first.status_code == 201, first.text
-
+    # 2. Повтор запроса не создаёт второе собеседование (раздел 79)
     repeated = await _book(client, match, slot.id)
-
     assert repeated.status_code == 200
-    assert repeated.json()["id"] == first.json()["id"]
+    assert repeated.json()["id"] == body["id"]
     assert await Interview.filter(match_id=match.id).count() == 1
 
-
-async def test_booking_another_slot_after_booking_is_refused(
-    client: AsyncClient,
-) -> None:
-    """Перенос собеседования — P1 (раздел 46)."""
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer, starts_at=_at(days=1))
-    other_slot = await _slot(vacancy, employer, starts_at=_at(days=2))
-    match, _, candidate = await _matched(vacancy)
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-    assert (await _book(client, match, slot.id)).status_code == 201
-
-    response = await _book(client, match, other_slot.id)
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "interview_already_scheduled"
+    # 3. Перенос собеседования на другой слот — P1, сейчас отклонён
+    other_slot = await _slot(vacancy, employer, starts_at=_at(days=5))
+    reschedule = await _book(client, match, other_slot.id)
+    assert reschedule.status_code == 409
+    assert reschedule.json()["error"]["code"] == "interview_already_scheduled"
     await other_slot.refresh_from_db()
     assert other_slot.status is InterviewSlotStatus.AVAILABLE
 
-
-async def test_taken_slot_cannot_be_booked_twice(client: AsyncClient) -> None:
-    """Раздел 57: занятый слот — `409 Conflict`."""
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer)
-    first_match, _, first_candidate = await _matched(vacancy)
+    # 4. Занятый слот нельзя забронировать второй раз, даже другим кандидатом
+    # (раздел 57: занятый слот — 409 Conflict)
     second_match, second_application, second_candidate = await _matched(vacancy)
-    await _login(client, first_candidate.user_id, UserRole.CANDIDATE)
-    assert (await _book(client, first_match, slot.id)).status_code == 201
     await _login(client, second_candidate.user_id, UserRole.CANDIDATE)
-
-    response = await _book(client, second_match, slot.id)
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "slot_taken"
+    taken = await _book(client, second_match, slot.id)
+    assert taken.status_code == 409
+    assert taken.json()["error"]["code"] == "slot_taken"
     assert await Interview.filter(slot_id=slot.id).count() == 1
     await second_application.refresh_from_db()
     assert second_application.status is ApplicationStatus.MUTUAL_INTEREST
+
+    # 5. Аналитика фиксирует бронирование (раздел 60)
+    event = await AnalyticsEvent.filter(
+        user_id=candidate.user_id, event_name="interview_booked"
+    ).get()
+    assert event.payload == {
+        "interview_id": body["id"],
+        "match_id": match.id,
+        "application_id": application.id,
+        "vacancy_id": vacancy.id,
+        "slot_id": slot.id,
+    }
+
+    # 6. После перезахода экран «Интервью назначено» восстанавливается из
+    # состояния на сервере: занятый слот больше не предлагается
+    await _login(client, candidate.user_id, UserRole.CANDIDATE)
+    reload_view = (await _list_slots(client, vacancy)).json()
+    assert [item["id"] for item in reload_view["items"]] == [other_slot.id]
+    assert len(reload_view["interviews"]) == 1
+    reloaded_interview = reload_view["interviews"][0]
+    assert reloaded_interview["slot"]["id"] == slot.id
+    assert reloaded_interview["status"] == InterviewStatus.SCHEDULED.value
+    assert (
+        reloaded_interview["application_status"]
+        == ApplicationStatus.INTERVIEW_SCHEDULED.value
+    )
+
+
+# --- Бронирование: guard'ы и предусловия -----------------------------------------
+
+
+async def test_booking_guards_and_preconditions(client: AsyncClient) -> None:
+    # 1. Отменённый и прошедший слот забронировать нельзя
+    employer = await _other_employer()
+    vacancy = await _vacancy(employer)
+    cancelled = await _slot(
+        vacancy, employer, starts_at=_at(days=1), status=InterviewSlotStatus.CANCELLED
+    )
+    past = await _slot(vacancy, employer, starts_at=utcnow() - timedelta(hours=1))
+    match, _, candidate = await _matched(vacancy)
+    await _login(client, candidate.user_id, UserRole.CANDIDATE)
+    cancelled_response = await _book(client, match, cancelled.id)
+    past_response = await _book(client, match, past.id)
+    assert cancelled_response.status_code == 409
+    assert cancelled_response.json()["error"]["code"] == "slot_cancelled"
+    assert past_response.status_code == 409
+    assert past_response.json()["error"]["code"] == "slot_in_past"
+    assert not await Interview.filter(match_id=match.id).exists()
+
+    # 2. Слот другой вакансии того же работодателя забронировать нельзя
+    other_vacancy = await _vacancy(employer)
+    foreign_slot = await _slot(other_vacancy, employer)
+    wrong_vacancy = await _book(client, match, foreign_slot.id)
+    assert wrong_vacancy.status_code == 404
+    assert wrong_vacancy.json()["error"]["code"] == "slot_not_found"
+
+    # 3. Несуществующий слот и несуществующий match — 404
+    unknown_slot = await _book(client, match, 999999)
+    assert unknown_slot.status_code == 404
+    assert unknown_slot.json()["error"]["code"] == "slot_not_found"
+
+    unknown_match = await client.post(
+        "/api/matches/999999/book", json={"slot_id": 1}
+    )
+    assert unknown_match.status_code == 404
+    assert unknown_match.json()["error"]["code"] == "match_not_found"
+
+    # 4. Чужой match забронировать нельзя, статус отклика не меняется
+    foreign_match, foreign_application, _ = await _matched(vacancy)
+    foreign_slot_for_match = await _slot(vacancy, employer, starts_at=_at(days=2))
+    await _login(client, next(_candidate_ids), UserRole.CANDIDATE)
+    foreign_match_response = await _book(
+        client, foreign_match, foreign_slot_for_match.id
+    )
+    assert foreign_match_response.status_code == 404
+    assert foreign_match_response.json()["error"]["code"] == "match_not_found"
+    await foreign_application.refresh_from_db()
+    assert foreign_application.status is ApplicationStatus.MUTUAL_INTEREST
+
+    # 5. Работодателю бронирование недоступно, без сессии — тоже
+    role_vacancy_owner = await _employer(client)
+    role_vacancy = await _vacancy(role_vacancy_owner)
+    role_slot = await _slot(role_vacancy, role_vacancy_owner)
+    role_match, _, _ = await _matched(role_vacancy)
+    wrong_role = await _book(client, role_match, role_slot.id)
+    assert wrong_role.status_code == 403
+    assert wrong_role.json()["error"]["code"] == "wrong_role"
+
+    async with _fresh_client() as guest:
+        session_vacancy_owner = await _other_employer()
+        session_vacancy = await _vacancy(session_vacancy_owner)
+        session_slot = await _slot(session_vacancy, session_vacancy_owner)
+        session_match, _, _ = await _matched(session_vacancy)
+        assert (
+            await _book(guest, session_match, session_slot.id)
+        ).status_code == 401
+
+    # 6. До взаимного интереса бронирование отклоняется картой переходов
+    # раздела 26
+    early_owner = await _other_employer()
+    early_vacancy = await _vacancy(early_owner)
+    early_slot = await _slot(early_vacancy, early_owner)
+    early_candidate = await _candidate()
+    early_application = await _application(
+        early_vacancy, early_candidate, status=ApplicationStatus.PASSED
+    )
+    early_match = await Match.create(application_id=early_application.id)
+    await _login(client, early_candidate.user_id, UserRole.CANDIDATE)
+    too_early = await _book(client, early_match, early_slot.id)
+    assert too_early.status_code == 409
+    assert too_early.json()["error"]["code"] == "invalid_state_transition"
+    await early_slot.refresh_from_db()
+    assert early_slot.status is InterviewSlotStatus.AVAILABLE
+
+
+# --- Конкурентность и гонки (диагностика важнее компактности) -------------------
 
 
 async def test_concurrent_booking_of_one_slot(client: AsyncClient) -> None:
@@ -749,169 +717,6 @@ async def test_concurrent_booking_of_one_slot(client: AsyncClient) -> None:
             vacancy_id=vacancy.id, status=ApplicationStatus.INTERVIEW_SCHEDULED
         ).count()
         == 1
-    )
-
-
-async def test_cancelled_and_past_slots_cannot_be_booked(
-    client: AsyncClient,
-) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    cancelled = await _slot(
-        vacancy, employer, starts_at=_at(days=1), status=InterviewSlotStatus.CANCELLED
-    )
-    past = await _slot(vacancy, employer, starts_at=utcnow() - timedelta(hours=1))
-    match, _, candidate = await _matched(vacancy)
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-
-    cancelled_response = await _book(client, match, cancelled.id)
-    past_response = await _book(client, match, past.id)
-
-    assert cancelled_response.status_code == 409
-    assert cancelled_response.json()["error"]["code"] == "slot_cancelled"
-    assert past_response.status_code == 409
-    assert past_response.json()["error"]["code"] == "slot_in_past"
-    assert not await Interview.filter(match_id=match.id).exists()
-
-
-async def test_slot_of_other_vacancy_cannot_be_booked(client: AsyncClient) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    other_vacancy = await _vacancy(employer)
-    foreign_slot = await _slot(other_vacancy, employer)
-    match, _, candidate = await _matched(vacancy)
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-
-    response = await _book(client, match, foreign_slot.id)
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "slot_not_found"
-
-
-async def test_unknown_slot_is_not_found(client: AsyncClient) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    match, _, candidate = await _matched(vacancy)
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-
-    response = await _book(client, match, 999999)
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "slot_not_found"
-
-
-async def test_foreign_match_cannot_be_booked(client: AsyncClient) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer)
-    match, application, _ = await _matched(vacancy)
-    await _login(client, next(_candidate_ids), UserRole.CANDIDATE)
-
-    response = await _book(client, match, slot.id)
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "match_not_found"
-    await application.refresh_from_db()
-    assert application.status is ApplicationStatus.MUTUAL_INTEREST
-
-
-async def test_unknown_match_is_not_found(client: AsyncClient) -> None:
-    await _login(client, next(_candidate_ids), UserRole.CANDIDATE)
-
-    response = await client.post("/api/matches/999999/book", json={"slot_id": 1})
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "match_not_found"
-
-
-async def test_booking_requires_candidate_role(client: AsyncClient) -> None:
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer)
-    match, _, _ = await _matched(vacancy)
-
-    response = await _book(client, match, slot.id)
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "wrong_role"
-
-
-async def test_booking_requires_session(client: AsyncClient) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer)
-    match, _, _ = await _matched(vacancy)
-
-    assert (await _book(client, match, slot.id)).status_code == 401
-
-
-async def test_booking_before_mutual_interest_is_refused(
-    client: AsyncClient,
-) -> None:
-    """Статус отклика проверяется по карте переходов раздела 26."""
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer)
-    candidate = await _candidate()
-    application = await _application(
-        vacancy, candidate, status=ApplicationStatus.PASSED
-    )
-    match = await Match.create(application_id=application.id)
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-
-    response = await _book(client, match, slot.id)
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "invalid_state_transition"
-    await slot.refresh_from_db()
-    assert slot.status is InterviewSlotStatus.AVAILABLE
-
-
-async def test_booking_writes_analytics_event(client: AsyncClient) -> None:
-    """Раздел 60: `interview_booked`."""
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer)
-    match, application, candidate = await _matched(vacancy)
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-
-    interview_id = (await _book(client, match, slot.id)).json()["id"]
-
-    event = await AnalyticsEvent.filter(
-        user_id=candidate.user_id, event_name="interview_booked"
-    ).get()
-    assert event.payload == {
-        "interview_id": interview_id,
-        "match_id": match.id,
-        "application_id": application.id,
-        "vacancy_id": vacancy.id,
-        "slot_id": slot.id,
-    }
-
-
-async def test_candidate_sees_booked_interview_after_reload(
-    client: AsyncClient,
-) -> None:
-    """Экран «Интервью назначено» восстанавливается из состояния на сервере."""
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer, starts_at=_at(days=1))
-    free_slot = await _slot(vacancy, employer, starts_at=_at(days=2))
-    match, _, candidate = await _matched(vacancy)
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-    await _book(client, match, slot.id)
-
-    body = (await _list_slots(client, vacancy)).json()
-
-    # Занятый слот в выбор больше не попадает, а назначенное время видно
-    assert [item["id"] for item in body["items"]] == [free_slot.id]
-    assert len(body["interviews"]) == 1
-    interview = body["interviews"][0]
-    assert interview["slot"]["id"] == slot.id
-    assert interview["status"] == InterviewStatus.SCHEDULED.value
-    assert (
-        interview["application_status"]
-        == ApplicationStatus.INTERVIEW_SCHEDULED.value
     )
 
 
@@ -953,14 +758,15 @@ async def test_cancel_and_booking_race_leaves_consistent_state(
         assert application.status is ApplicationStatus.INTERVIEW_SCHEDULED
 
 
-# --- Сквозной путь этапа ----------------------------------------------------
+# --- Сквозной путь этапа: приглашение → назначенное собеседование ---------------
 
 
-async def test_invite_to_interview_scheduled(client: AsyncClient) -> None:
+async def test_end_to_end_interview_scheduling(client: AsyncClient) -> None:
     """Приглашение → взаимный интерес → слот → бронирование → назначено.
 
     Результат обязательного маршрута P0 (раздел 1): `Interview scheduled`.
     """
+    # 1. Приглашение → слот → бронирование → назначенное собеседование
     employer = await _employer(client)
     vacancy = await _vacancy(employer)
     candidate = await _candidate()
@@ -975,21 +781,24 @@ async def test_invite_to_interview_scheduled(client: AsyncClient) -> None:
     match_id = decision.json()["match_id"]
 
     starts_at = _at(days=1)
-    slot = await _create_slot(
+    slot_response = await _create_slot(
         client, vacancy, starts_at=starts_at, ends_at=starts_at + timedelta(hours=1)
     )
-    assert slot.status_code == 201, slot.text
-    slot_id = slot.json()["id"]
+    assert slot_response.status_code == 201, slot_response.text
+    slot_id = slot_response.json()["id"]
+    other_slot_response = await _create_slot(
+        client, vacancy, starts_at=_at(days=2), ends_at=_at(days=2, hours=1)
+    )
+    assert other_slot_response.status_code == 201, other_slot_response.text
 
     await _login(client, candidate.user_id, UserRole.CANDIDATE)
     available = (await _list_slots(client, vacancy)).json()
-    assert [item["id"] for item in available["items"]] == [slot_id]
+    assert slot_id in [item["id"] for item in available["items"]]
     assert available["match_id"] == match_id
 
     booked = await client.post(
         f"/api/matches/{match_id}/book", json={"slot_id": slot_id}
     )
-
     assert booked.status_code == 201, booked.text
     await application.refresh_from_db()
     assert application.status is ApplicationStatus.INTERVIEW_SCHEDULED
@@ -997,47 +806,22 @@ async def test_invite_to_interview_scheduled(client: AsyncClient) -> None:
     assert interview.status is InterviewStatus.SCHEDULED
     assert (await InterviewSlot.get(id=slot_id)).status is InterviewSlotStatus.BOOKED
 
+    # 2. Работодателю видно не только «слот занят», но и с кем встреча —
+    # без раскрытия личных данных кандидата (раздел 34)
+    await _login(client, employer.user_id, UserRole.EMPLOYER)
+    employer_view = (await _list_slots(client, vacancy)).json()
+    scheduled = next(
+        item for item in employer_view["interviews"] if item["slot"]["id"] == slot_id
+    )
+    assert scheduled["application_id"] == application.id
+    assert scheduled["match_id"] == match_id
+    assert scheduled["status"] == InterviewStatus.SCHEDULED.value
+    assert "Кандидат" not in str(employer_view)
 
-async def test_employer_sees_scheduled_interviews(client: AsyncClient) -> None:
-    """Работодателю нужно не только «слот занят», но и с кем встреча."""
-    employer = await _employer(client)
-    vacancy = await _vacancy(employer)
-    slot = await _slot(vacancy, employer, starts_at=_at(days=1))
-    await _slot(vacancy, employer, starts_at=_at(days=2))
-    match, application, candidate = await _matched(vacancy)
-
-    async with _fresh_client() as candidate_client:
-        await _login(candidate_client, candidate.user_id, UserRole.CANDIDATE)
-        assert (await _book(candidate_client, match, slot.id)).status_code == 201
-
-    body = (await _list_slots(client, vacancy)).json()
-
-    assert len(body["interviews"]) == 1
-    interview = body["interviews"][0]
-    assert interview["application_id"] == application.id
-    assert interview["match_id"] == match.id
-    assert interview["slot"]["id"] == slot.id
-    assert interview["status"] == InterviewStatus.SCHEDULED.value
-    # Личных данных кандидата в ответе нет (раздел 34)
-    assert "Кандидат" not in str(body)
-
-
-async def test_candidate_does_not_see_other_interviews(client: AsyncClient) -> None:
-    employer = await _other_employer()
-    vacancy = await _vacancy(employer)
-    taken_slot = await _slot(vacancy, employer, starts_at=_at(days=1))
-    await _slot(vacancy, employer, starts_at=_at(days=2))
+    # 3. Другой кандидат по той же вакансии это собеседование не видит
     other_match, other_application, other_candidate = await _matched(vacancy)
-    match, _, candidate = await _matched(vacancy)
-
-    async with _fresh_client() as other_client:
-        await _login(other_client, other_candidate.user_id, UserRole.CANDIDATE)
-        booked = await _book(other_client, other_match, taken_slot.id)
-        assert booked.status_code == 201, booked.text
-
-    await _login(client, candidate.user_id, UserRole.CANDIDATE)
-    body = (await _list_slots(client, vacancy)).json()
-
-    assert body["match_id"] == match.id
-    assert body["interviews"] == []
-    assert str(other_application.id) not in str(body["interviews"])
+    await _login(client, other_candidate.user_id, UserRole.CANDIDATE)
+    other_view = (await _list_slots(client, vacancy)).json()
+    assert other_view["match_id"] == other_match.id
+    assert other_view["interviews"] == []
+    assert str(other_application.id) not in str(other_view["interviews"])

@@ -1,4 +1,12 @@
-"""GET /api/vacancies/feed. Раздел 30 тех-доки."""
+"""GET /api/vacancies/feed. Раздел 30 тех-доки.
+
+Гвард-проверки и вся фильтрация по критериям собраны в сквозные сценарии.
+После первого шага (который требует чистой базы для точного списка) все
+остальные шаги фильтрации используют проверки "включено/не включено" по
+конкретному заголовку вакансии — это устойчиво к накоплению вакансий из
+предыдущих шагов того же теста. Инварианты пагинации на синтетически
+одинаковых `created_at` оставлены отдельным тестом — там важна изоляция.
+"""
 
 from datetime import date
 from decimal import Decimal
@@ -90,12 +98,15 @@ def _titles(body: dict) -> list[str]:
     return [item["title"] for item in body["items"]]
 
 
-async def test_feed_requires_candidate_role(client: AsyncClient) -> None:
+# --- Доступ -------------------------------------------------------------------
+
+
+async def test_feed_access_guards(client: AsyncClient) -> None:
+    # 1. Без выбранной роли и с чужой ролью лента недоступна
     await client.post(
         "/api/auth/max",
         json={"init_data": build_init_data(user=max_user_payload(user_id=741001))},
     )
-
     without_role = await client.get("/api/vacancies/feed")
     assert without_role.status_code == 403
     assert without_role.json()["error"]["code"] == "role_not_selected"
@@ -105,199 +116,112 @@ async def test_feed_requires_candidate_role(client: AsyncClient) -> None:
     assert as_employer.status_code == 403
     assert as_employer.json()["error"]["code"] == "wrong_role"
 
-
-async def test_feed_requires_session(client: AsyncClient) -> None:
-    response = await client.get("/api/vacancies/feed")
-
-    assert response.status_code == 401
+    # 2. Без сессии — 401
+    client.cookies.clear()
+    assert (await client.get("/api/vacancies/feed")).status_code == 401
 
 
-async def test_only_published_vacancies_are_shown(client: AsyncClient) -> None:
+# --- Фильтрация по критериям и содержимое карточки -----------------------------
+
+
+async def test_feed_criteria_filtering(client: AsyncClient) -> None:
+    # 1. Показываются только опубликованные вакансии — база здесь ещё чистая,
+    # поэтому список можно сверить точно
     await _login_candidate(client, 741002)
     await _vacancy("Опубликованная")
     await _vacancy("Черновик", status=VacancyStatus.DRAFT)
     await _vacancy("Закрытая", status=VacancyStatus.CLOSED)
+    assert _titles(await _feed(client)) == ["Опубликованная"]
 
-    body = await _feed(client)
-
-    assert _titles(body) == ["Опубликованная"]
-
-
-async def test_vacancy_without_criteria_is_shown(client: AsyncClient) -> None:
+    # 2. Вакансия без условий видна всем
     await _login_candidate(client, 741003)
     await _vacancy("Без условий")
-
     assert "Без условий" in _titles(await _feed(client))
 
-
-async def test_vacancy_with_failing_required_criterion_is_hidden(
-    client: AsyncClient,
-) -> None:
+    # 3. Обязательное условие прячет несовпадающую вакансию и показывает подходящую
     await _login_candidate(client, 741004, city="Москва")
     await _vacancy(
-        "Казань обязательна",
-        criteria=[(CriterionType.LOCATION, {"city": "Казань"}, True)],
+        "Казань обязательна", criteria=[(CriterionType.LOCATION, {"city": "Казань"}, True)]
     )
     await _vacancy(
-        "Москва подходит",
+        "Москва подходит 741004",
         criteria=[(CriterionType.LOCATION, {"city": "Москва"}, True)],
     )
+    required_titles = _titles(await _feed(client))
+    assert "Москва подходит 741004" in required_titles
+    assert "Казань обязательна" not in required_titles
 
-    assert _titles(await _feed(client)) == ["Москва подходит"]
-
-
-async def test_failing_optional_criterion_does_not_hide_vacancy(
-    client: AsyncClient,
-) -> None:
+    # 4. Необязательное условие вакансию не прячет, даже если оно не подходит
     await _login_candidate(client, 741005, city="Москва")
     await _vacancy(
-        "Желательно Казань",
-        criteria=[(CriterionType.LOCATION, {"city": "Казань"}, False)],
+        "Желательно Казань", criteria=[(CriterionType.LOCATION, {"city": "Казань"}, False)]
     )
+    assert "Желательно Казань" in _titles(await _feed(client))
 
-    assert _titles(await _feed(client)) == ["Желательно Казань"]
-
-
-async def test_uncheckable_criterion_keeps_vacancy(client: AsyncClient) -> None:
-    """Нет данных в профиле — не повод прятать вакансию."""
+    # 5. Нет данных в профиле — не повод прятать вакансию
     await _login_candidate(client, 741006, city=None)
     await _vacancy(
-        "Нужна Москва", criteria=[(CriterionType.LOCATION, {"city": "Москва"}, True)]
+        "Нужна Москва 741006",
+        criteria=[(CriterionType.LOCATION, {"city": "Москва"}, True)],
     )
+    assert "Нужна Москва 741006" in _titles(await _feed(client))
 
-    assert _titles(await _feed(client)) == ["Нужна Москва"]
-
-
-async def test_salary_expectations_filter_vacancy_out(client: AsyncClient) -> None:
+    # 6. Ожидания по зарплате выше потолка вакансии — вакансия скрыта
     await _login_candidate(client, 741007, salary=Decimal("120000"))
     await _vacancy(
-        "Потолок ниже ожиданий",
-        criteria=[(CriterionType.SALARY, {"max": 80000}, True)],
+        "Потолок ниже ожиданий", criteria=[(CriterionType.SALARY, {"max": 80000}, True)]
     )
+    assert "Потолок ниже ожиданий" not in _titles(await _feed(client))
 
-    assert _titles(await _feed(client)) == []
-
-
-async def test_non_finite_salary_criterion_does_not_break_feed(
-    client: AsyncClient,
-) -> None:
+    # 7. Некорректный предел зарплаты не должен ронять ленту целиком
     await _login_candidate(client, 741014)
     await _vacancy(
         "Некорректный предел",
         criteria=[(CriterionType.SALARY, {"max": "NaN"}, True)],
         salary_max=None,
     )
+    assert "Некорректный предел" in _titles(await _feed(client))
 
-    body = await _feed(client)
-
-    assert _titles(body) == ["Некорректный предел"]
-
-
-async def test_experience_and_date_are_applied(client: AsyncClient) -> None:
+    # 8. Опыт и дата выхода применяются вместе
     await _login_candidate(
         client, 741008, experience_months=6, available_from=date(2026, 12, 1)
     )
     await _vacancy(
-        "Нужен опыт от 2 лет",
-        criteria=[(CriterionType.EXPERIENCE, {"min_months": 24}, True)],
+        "Нужен опыт от 2 лет", criteria=[(CriterionType.EXPERIENCE, {"min_months": 24}, True)]
     )
     await _vacancy(
         "Выход до октября",
         criteria=[(CriterionType.AVAILABLE_FROM, {"date": "2026-10-01"}, True)],
     )
     await _vacancy(
-        "Опыта хватает",
+        "Опыта хватает 741008",
         criteria=[(CriterionType.EXPERIENCE, {"min_months": 3}, True)],
     )
+    experience_titles = _titles(await _feed(client))
+    assert "Опыта хватает 741008" in experience_titles
+    assert "Нужен опыт от 2 лет" not in experience_titles
+    assert "Выход до октября" not in experience_titles
 
-    assert _titles(await _feed(client)) == ["Опыта хватает"]
-
-
-async def test_already_applied_vacancy_leaves_feed(client: AsyncClient) -> None:
-    candidate = await _login_candidate(client, 741009)
+    # 9. Отклик на вакансию убирает её из ленты
+    applying_candidate = await _login_candidate(client, 741009)
     applied = await _vacancy("Уже откликнулся")
-    await _vacancy("Новая")
+    await _vacancy("Новая 741009")
     await Application.create(
-        vacancy=applied, candidate=candidate, status=ApplicationStatus.SCREENING
+        vacancy=applied, candidate=applying_candidate, status=ApplicationStatus.SCREENING
     )
+    applied_titles = _titles(await _feed(client))
+    assert "Новая 741009" in applied_titles
+    assert "Уже откликнулся" not in applied_titles
 
-    assert _titles(await _feed(client)) == ["Новая"]
-
-
-async def test_feed_is_empty_without_profile(client: AsyncClient) -> None:
+    # 10. Без профиля лента пуста
     await _login_candidate(client, 741010, with_profile=False)
     await _vacancy("Есть вакансия")
+    empty_body = await _feed(client)
+    assert empty_body["items"] == []
+    assert empty_body["total"] == 0
 
-    body = await _feed(client)
-
-    assert body["items"] == []
-    assert body["total"] == 0
-
-
-async def test_card_contains_vacancy_conditions(client: AsyncClient) -> None:
-    await _login_candidate(client, 741011)
-    await _vacancy(
-        "С условиями",
-        criteria=[(CriterionType.SCHEDULE, {"schedule": "full_time"}, True)],
-    )
-
-    card = (await _feed(client))["items"][0]
-
-    assert card["location"] == "Москва"
-    assert card["salary_max"] == "90000.00"
-    assert card["criteria"] == [
-        {"type": "schedule", "required": True, "value": {"schedule": "full_time"}}
-    ]
-
-
-async def test_pagination(client: AsyncClient) -> None:
-    await _login_candidate(client, 741012)
-    for index in range(3):
-        await _vacancy(f"Вакансия {index}")
-
-    first = await _feed(client, limit=2)
-    second = await _feed(client, limit=2, offset=2)
-
-    assert len(first["items"]) == 2
-    assert first["total"] >= 3
-    assert len(second["items"]) >= 1
-    assert set(_titles(first)).isdisjoint(_titles(second))
-
-
-async def test_feed_scans_past_internal_batch(client: AsyncClient) -> None:
-    await _login_candidate(client, 741015, city="Москва")
-    await _vacancy("Старая подходящая")
-    for index in range(3):
-        await _vacancy(
-            f"Новая неподходящая {index}",
-            criteria=[(CriterionType.LOCATION, {"city": "Казань"}, True)],
-        )
-
-    original_batch_size = matching_service.FEED_SCAN_BATCH_SIZE
-    matching_service.FEED_SCAN_BATCH_SIZE = 2
-    try:
-        body = await _feed(client)
-    finally:
-        matching_service.FEED_SCAN_BATCH_SIZE = original_batch_size
-
-    assert _titles(body) == ["Старая подходящая"]
-    assert body["total"] == 1
-
-
-async def test_invalid_pagination_is_rejected(client: AsyncClient) -> None:
-    await _login_candidate(client, 741013)
-
-    response = await client.get("/api/vacancies/feed", params={"limit": 500})
-
-    assert response.status_code == 422
-
-
-async def test_unknown_criterion_type_does_not_break_feed(client: AsyncClient) -> None:
-    """Тип критерия вне `CriterionType` роняет чтение всей ленты, если его читать.
-
-    Такое значение может остаться в базе от более новой версии кода, поэтому
-    подбор просто не берёт его в расчёт.
-    """
+    # 11. Неизвестный тип критерия (например, от более новой версии кода)
+    # не должен ронять чтение всей ленты — подбор просто не берёт его в расчёт
     await _login_candidate(client, 741020)
     broken = await _vacancy("С неизвестным условием")
     await Tortoise.get_connection("default").execute_query(
@@ -305,9 +229,75 @@ async def test_unknown_criterion_type_does_not_break_feed(client: AsyncClient) -
         " VALUES ($1, 'education', TRUE, '{\"level\": \"higher\"}'::jsonb, NOW())",
         [broken.id],
     )
-    await _vacancy("Обычная")
+    await _vacancy("Обычная 741020")
+    unknown_criterion_titles = _titles(await _feed(client))
+    assert "С неизвестным условием" in unknown_criterion_titles
+    assert "Обычная 741020" in unknown_criterion_titles
 
-    assert set(_titles(await _feed(client))) == {"С неизвестным условием", "Обычная"}
+    # 12. Карточка ленты содержит условия вакансии и её зарплатный потолок
+    await _login_candidate(client, 741011)
+    await _vacancy(
+        "С условиями", criteria=[(CriterionType.SCHEDULE, {"schedule": "full_time"}, True)]
+    )
+    card = next(
+        item for item in (await _feed(client))["items"] if item["title"] == "С условиями"
+    )
+    assert card["location"] == "Москва"
+    assert card["salary_max"] == "90000.00"
+    assert card["criteria"] == [
+        {"type": "schedule", "required": True, "value": {"schedule": "full_time"}}
+    ]
+
+
+# --- Пагинация ------------------------------------------------------------------
+
+
+async def test_feed_pagination(client: AsyncClient) -> None:
+    # 1. Обычная пагинация: страницы не пересекаются, total не меньше выборки
+    await _login_candidate(client, 741012)
+    for index in range(3):
+        await _vacancy(f"Вакансия {index}")
+    first = await _feed(client, limit=2)
+    second = await _feed(client, limit=2, offset=2)
+    assert len(first["items"]) == 2
+    assert first["total"] >= 3
+    assert len(second["items"]) >= 1
+    assert set(_titles(first)).isdisjoint(_titles(second))
+
+    # 2. total — это полное число подходящих вакансий, а не размер страницы
+    # (изолируем от вакансий шага 1, чтобы сравнить с точным числом)
+    await Vacancy.all().delete()
+    await _login_candidate(client, 741022)
+    for index in range(3):
+        await _vacancy(f"Отдельная вакансия {index}")
+    counted = await _feed(client, limit=2)
+    assert len(counted["items"]) == 2
+    assert counted["total"] == 3
+    assert len(_titles(await _feed(client, limit=2, offset=2))) == 1
+
+    # 3. Некорректная пагинация отклоняется
+    await _login_candidate(client, 741013)
+    invalid = await client.get("/api/vacancies/feed", params={"limit": 500})
+    assert invalid.status_code == 422
+
+    # 4. Внутренний размер батча сканирования не должен терять подходящие
+    # вакансии за неподходящими более новыми — тоже изолируем от шагов выше
+    await Vacancy.all().delete()
+    await _login_candidate(client, 741015, city="Москва")
+    await _vacancy("Старая подходящая")
+    for index in range(3):
+        await _vacancy(
+            f"Новая неподходящая {index}",
+            criteria=[(CriterionType.LOCATION, {"city": "Казань"}, True)],
+        )
+    original_batch_size = matching_service.FEED_SCAN_BATCH_SIZE
+    matching_service.FEED_SCAN_BATCH_SIZE = 2
+    try:
+        body = await _feed(client)
+    finally:
+        matching_service.FEED_SCAN_BATCH_SIZE = original_batch_size
+    assert _titles(body) == ["Старая подходящая"]
+    assert body["total"] == 1
 
 
 async def test_pages_do_not_overlap_for_equal_created_at(client: AsyncClient) -> None:
@@ -327,16 +317,3 @@ async def test_pages_do_not_overlap_for_equal_created_at(client: AsyncClient) ->
     second = _titles(await _feed(client, limit=2, offset=2))
 
     assert len(set(first + second)) == 4
-
-
-async def test_total_counts_all_suitable_vacancies(client: AsyncClient) -> None:
-    """`total` — полное число подходящих вакансий, а не размер страницы."""
-    await _login_candidate(client, 741022)
-    for index in range(3):
-        await _vacancy(f"Вакансия {index}")
-
-    body = await _feed(client, limit=2)
-
-    assert len(body["items"]) == 2
-    assert body["total"] == 3
-    assert len(_titles(await _feed(client, limit=2, offset=2))) == 1
