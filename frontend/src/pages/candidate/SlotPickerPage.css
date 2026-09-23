@@ -1,0 +1,199 @@
+.slotPicker {
+  padding-top: 16px;
+}
+
+.slotPicker__title {
+  margin-top: 18px;
+  font-size: clamp(36px, 11.2vw, 46px);
+}
+
+.slotPicker__subtitle {
+  margin-top: 10px;
+  font-size: 18px;
+}
+
+.slotPicker__days {
+  display: flex;
+  gap: 10px;
+  margin: 18px -20px 0;
+  padding: 6px 20px 16px 24px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 24px;
+  scrollbar-width: none;
+}
+
+.slotPicker__days::-webkit-scrollbar {
+  display: none;
+}
+
+.slotPicker__day {
+  display: flex;
+  flex: 0 0 110px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 154px;
+  padding: 0;
+  border: 1px solid #e6eaf1;
+  border-radius: 24px;
+  background: #fff;
+  color: var(--screen-ink);
+  font-family: inherit;
+  scroll-snap-align: start;
+  cursor: pointer;
+}
+
+.slotPicker__day--active {
+  border-color: transparent;
+  background: var(--screen-primary);
+  color: #fff;
+  box-shadow: 0 14px 26px rgba(0, 110, 255, 0.26);
+}
+
+.slotPicker__dayNumber {
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.slotPicker__dayMonth {
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.slotPicker__day--active .slotPicker__dayMonth {
+  opacity: 1;
+}
+
+.slotPicker__weekday {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 27px;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: #eef1f6;
+  color: #5b6378;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.slotPicker__day--active .slotPicker__weekday {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.slotPicker__section {
+  margin: 16px 0 14px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--screen-ink);
+}
+
+.slotPicker__times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 11px;
+}
+
+.slotPicker__time {
+  height: 60px;
+  border: 1px solid #e3e8f0;
+  border-radius: 20px;
+  background: #fff;
+  color: var(--screen-ink);
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.slotPicker__time--active {
+  border-color: transparent;
+  background: var(--screen-primary);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(0, 110, 255, 0.22);
+}
+
+.slotPicker__summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 12px 14px 12px 12px;
+  border-radius: 26px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #edf0f5, 0 10px 26px rgba(15, 23, 42, 0.06);
+}
+
+.slotPicker__thumb {
+  width: 85px;
+  height: 85px;
+  flex-shrink: 0;
+  border-radius: 18px;
+}
+
+.slotPicker__summaryText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slotPicker__summaryDate {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--screen-ink);
+}
+
+.slotPicker__summaryTime {
+  font-size: 18px;
+  color: var(--screen-muted);
+}
+
+.slotPicker__summaryRole {
+  font-size: 16px;
+  color: var(--screen-muted);
+}
+
+.slotPicker__summaryIcon {
+  display: flex;
+  align-self: flex-start;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: #eef1f6;
+  color: var(--screen-ink);
+}
+
+.slotPicker__empty {
+  margin-top: 28px;
+  padding: 24px 20px;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: var(--screen-card-shadow);
+}
+
+.slotPicker__emptyTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.slotPicker__emptyText {
+  margin: 8px 0 0;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--screen-muted);
+}

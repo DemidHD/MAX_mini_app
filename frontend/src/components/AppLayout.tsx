@@ -9,7 +9,13 @@ import { Outlet } from 'react-router-dom'
 export function AppLayout() {
   return (
     <Panel mode="secondary" style={{ minHeight: '100vh' }}>
-      <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh' }}>
+      {/*
+       * Panel — flex-контейнер, поэтому классический трюк `margin: 0 auto`
+       * здесь не работает: auto-отступы по кросс-оси перебивают stretch, и
+       * блок сжимается до ширины контента вместо 100%. Центрируем через
+       * alignSelf, а ширину задаём явно и ограничиваем maxWidth.
+       */}
+      <div style={{ width: '100%', maxWidth: 480, alignSelf: 'center', minHeight: '100vh' }}>
         <Outlet />
       </div>
     </Panel>

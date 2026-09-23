@@ -1,0 +1,228 @@
+.inviteConfirm {
+  padding-top: 16px;
+}
+
+.inviteConfirm__title {
+  margin-top: 22px;
+  font-size: clamp(36px, 11.2vw, 46px);
+}
+
+.inviteConfirm__scene {
+  position: relative;
+  margin: 36px 12px 0;
+}
+
+.inviteConfirm__marks--top {
+  top: -30px;
+  right: -14px;
+  transform: rotate(8deg);
+}
+
+.inviteConfirm__marks--bottom {
+  top: 196px;
+  left: -8px;
+  transform: rotate(-120deg);
+}
+
+.inviteConfirm__person {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 15px 16px;
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.03), 0 16px 36px rgba(15, 23, 42, 0.08);
+}
+
+.inviteConfirm__avatar {
+  width: 90px;
+  height: 90px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.inviteConfirm__personText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inviteConfirm__name {
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--screen-ink);
+}
+
+.inviteConfirm__role {
+  font-size: 17px;
+  color: var(--screen-muted);
+}
+
+.inviteConfirm__match {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 31px;
+  margin-top: 6px;
+  padding: 0 14px 0 8px;
+  border-radius: 999px;
+  background: #e5eefd;
+  color: var(--screen-primary);
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.inviteConfirm__matchIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--screen-primary);
+  color: #fff;
+}
+
+.inviteConfirm__link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.inviteConfirm__dots {
+  width: 3px;
+  height: 20px;
+  background: repeating-linear-gradient(to bottom, var(--screen-primary) 0 5px, transparent 5px 9px);
+  border-radius: 2px;
+}
+
+.inviteConfirm__send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--screen-primary);
+  color: #fff;
+  box-shadow: 0 10px 20px rgba(0, 110, 255, 0.25);
+}
+
+.inviteConfirm__interview {
+  position: relative;
+  height: 150px;
+  margin: 2px 8px 0;
+}
+
+.inviteConfirm__ghost {
+  position: absolute;
+  inset: -2px -6px 0 -18px;
+  border-radius: 26px;
+  background: linear-gradient(135deg, #e6eefc, #d6e3fa);
+  transform: rotate(6deg);
+}
+
+.inviteConfirm__ticket {
+  position: absolute;
+  inset: 12px 16px 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.1);
+  transform: rotate(-2deg);
+}
+
+.inviteConfirm__calendar {
+  flex: 0 0 106px;
+  padding: 10px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+  color: var(--screen-primary);
+}
+
+.inviteConfirm__calendarHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.inviteConfirm__calendarHead span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.inviteConfirm__calendarHead i {
+  height: 4px;
+  border-radius: 2px;
+  background: #e3e8f0;
+}
+
+.inviteConfirm__calendarHead i + i {
+  width: 70%;
+}
+
+.inviteConfirm__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.inviteConfirm__grid i {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: #e9edf3;
+}
+
+.inviteConfirm__grid .inviteConfirm__cell--active {
+  background: var(--screen-primary);
+}
+
+.inviteConfirm__ticketText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.inviteConfirm__ticketText span {
+  margin-bottom: 4px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--screen-ink);
+}
+
+.inviteConfirm__ticketText i {
+  height: 10px;
+  border-radius: 5px;
+  background: #e9edf3;
+}
+
+.inviteConfirm__ticketText i + i {
+  width: 62%;
+}
+
+.inviteConfirm__hint {
+  margin: 34px 16px 0;
+  text-align: center;
+  font-size: 16px;
+  line-height: 1.3;
+  color: var(--screen-muted);
+}
+
+.inviteConfirm__submit {
+  margin-top: 10px;
+}

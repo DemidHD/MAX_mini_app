@@ -1,0 +1,146 @@
+.vacancyCriteria {
+  min-height: 100vh;
+  background: #fff;
+}
+
+.vacancyCriteria__body {
+  padding: 4px 20px 32px;
+}
+
+.vacancyCriteria__heading {
+  display: block;
+  /* Не clamp(32,10vw,42) как на остальных экранах: у этого заголовка два
+     длинных слова в первой строке («Что действительно»), при большем
+     размере строка не влезает и переносится в три строки вместо двух,
+     как в референсе. */
+  font-size: clamp(24px, 8vw, 30px);
+  font-weight: 800;
+  line-height: 1.08;
+  color: #0b0f2e;
+  margin-bottom: 8px;
+}
+
+.vacancyCriteria__subtitle {
+  display: block;
+  color: #8b93a7;
+  font-size: 15px;
+  line-height: 1.35;
+  margin-bottom: 20px;
+}
+
+.vacancyCriteria__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.criterionCard {
+  padding: 16px;
+  border-radius: 20px;
+  /* Белый + тень, как остальные карточки шага 1 — плоская заливка
+     (#f8f9fc + border) не совпадала с референсом. */
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+
+.criterionCard__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.criterionCard__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #e7edfb;
+  color: var(--button-primary, #007aff);
+  flex-shrink: 0;
+}
+
+.criterionCard__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.criterionCard__label {
+  font-size: 12px;
+  color: #8b93a7;
+}
+
+.criterionCard__value {
+  display: block;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #0b0f2e;
+  /* Полный адрес («Москва, м. Белорусская») длиннее, чем короткий пример
+     в референсе — переносим на вторую строку, а не режем многоточием. */
+  overflow-wrap: break-word;
+}
+
+.criterionCard__toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.criterionCard__option {
+  padding: 10px;
+  border: none;
+  border-radius: 999px;
+  background: #e9ecf2;
+  color: #6b7280;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.criterionCard__option--active {
+  background: var(--button-primary, #007aff);
+  color: #fff;
+}
+
+.criterionCard__option--desired.criterionCard__option--active {
+  background: #0b0f2e;
+  color: #fff;
+}
+
+.vacancyCriteria__hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #8b93a7;
+  margin-bottom: 20px;
+}
+
+.vacancyCriteria__hintText {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.vacancyCriteria__next {
+  display: block;
+  width: 100%;
+  padding: 17px;
+  border: none;
+  border-radius: 999px;
+  background: var(--button-primary, #007aff);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.vacancyCriteria__next:active {
+  transform: scale(0.99);
+}

@@ -1,0 +1,77 @@
+.progressSteps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progressSteps__step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.progressSteps__line {
+  position: absolute;
+  top: 18px;
+  right: calc(50% + 26px);
+  width: calc(100% - 52px);
+  height: 2px;
+  border-radius: 1px;
+  background: #dfe4ec;
+}
+
+.progressSteps__line--active {
+  background: linear-gradient(90deg, var(--screen-primary), #8ab8ff);
+}
+
+.progressSteps__circle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 37px;
+  height: 37px;
+  border-radius: 50%;
+  background: #e6eaf1;
+  color: #7c849a;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.progressSteps__step--done .progressSteps__circle {
+  background: var(--screen-primary);
+  color: #fff;
+  box-shadow: 0 8px 16px rgba(0, 110, 255, 0.25);
+}
+
+.progressSteps__step--current .progressSteps__circle {
+  background: #fff;
+  color: var(--screen-primary);
+  box-shadow: inset 0 0 0 2px var(--screen-primary);
+}
+
+.progressSteps__dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.progressSteps__step--todo .progressSteps__dot {
+  background: #a3abbd;
+}
+
+.progressSteps__label {
+  font-size: 16px;
+  color: var(--screen-muted);
+  white-space: nowrap;
+}
+
+.progressSteps__step--current .progressSteps__label {
+  color: var(--screen-ink);
+  font-weight: 500;
+}

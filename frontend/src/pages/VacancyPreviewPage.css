@@ -1,0 +1,132 @@
+.vacancyPreview {
+  min-height: 100vh;
+  background: #fff;
+}
+
+.vacancyPreview__body {
+  padding: 4px 20px 32px;
+}
+
+.vacancyPreview__photoCard {
+  border-radius: 24px;
+  overflow: hidden;
+  aspect-ratio: 1;
+  background: #0b0f2e;
+  margin-bottom: 18px;
+}
+
+.vacancyPreview__photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.vacancyPreview__title {
+  display: block;
+  font-size: clamp(34px, 10vw, 42px);
+  font-weight: 800;
+  line-height: 1.05;
+  color: #0b0f2e;
+  margin-bottom: 6px;
+}
+
+.vacancyPreview__salary {
+  display: block;
+  font-size: clamp(22px, 6.5vw, 27px);
+  font-weight: 800;
+  color: #0b0f2e;
+  margin-bottom: 16px;
+}
+
+.vacancyPreview__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 26px;
+}
+
+.vacancyPreview__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: #eaf1ff;
+  color: var(--button-primary, #007aff);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.vacancyPreview__section {
+  margin-bottom: 20px;
+}
+
+.vacancyPreview__sectionTitle {
+  display: block;
+  font-size: 19px;
+  font-weight: 800;
+  color: #0b0f2e;
+  margin-bottom: 10px;
+}
+
+.vacancyPreview__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vacancyPreview__chip {
+  padding: 10px 16px;
+  border-radius: 999px;
+  /* В референсе чипы «Обязательно» и «Желательно» одного нейтрального
+     серого цвета — раздел различают заголовки, а не цвет плашек. */
+  background: #f0f1f4;
+  color: #0b0f2e;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.vacancyPreview__error {
+  display: block;
+  color: #d92d20;
+  font-size: 14px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.vacancyPreview__actions {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.vacancyPreview__secondary,
+.vacancyPreview__primary {
+  padding: 16px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.vacancyPreview__secondary {
+  border: 1.5px solid #e2e6ee;
+  background: #fff;
+  color: #0b0f2e;
+}
+
+.vacancyPreview__primary {
+  border: none;
+  background: var(--button-primary, #007aff);
+  color: #fff;
+}
+
+.vacancyPreview__secondary:disabled,
+.vacancyPreview__primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

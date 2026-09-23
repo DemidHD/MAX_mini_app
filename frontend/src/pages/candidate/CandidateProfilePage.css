@@ -1,0 +1,260 @@
+.profileSetup {
+  padding-top: 32px;
+}
+
+.profileSetup .screen__logo {
+  margin-bottom: 26px;
+}
+
+.profileSetup__heading {
+  position: relative;
+}
+
+.profileSetup__title {
+  font-size: clamp(36px, 11.2vw, 46px);
+}
+
+.profileSetup__marks {
+  top: -32px;
+  right: 34px;
+}
+
+.profileSetup__subtitle {
+  margin-top: 10px;
+  font-size: 18px;
+}
+
+.profileSetup__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 9px;
+  margin-top: 18px;
+}
+
+.profileCard {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  min-height: 112px;
+  padding: 10px;
+  border: none;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 8px 24px rgba(15, 23, 42, 0.06);
+  color: var(--screen-ink);
+  font-family: inherit;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.profileCard--wide {
+  grid-column: 1 / -1;
+  align-items: center;
+  min-height: 74px;
+}
+
+.profileCard--wide:first-child {
+  min-height: 87px;
+}
+
+.profileCard--invalid {
+  box-shadow: inset 0 0 0 1.5px #e5484d, 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.profileCard__icon {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #eaf0fb;
+  color: var(--screen-primary);
+}
+
+.profileCard__text {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding-top: 5px;
+}
+
+.profileCard--wide .profileCard__text {
+  padding-top: 0;
+}
+
+.profileCard__label {
+  font-size: 13px;
+  color: var(--screen-muted);
+}
+
+.profileCard__value {
+  font-size: clamp(14px, 4.35vw, 19px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.profileCard__value--large {
+  font-size: 25px;
+}
+
+.profileCard__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  height: 29px;
+  margin-top: 2px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--screen-primary);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.profileCard__chevron {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  z-index: 1;
+  display: flex;
+  color: #6b7389;
+  transform: translateY(-50%);
+}
+
+.profileCard__chevron--top {
+  top: 14px;
+  right: 10px;
+  transform: none;
+}
+
+/* Места под фото из макета: пустые, но держат положение и форму. */
+.profileCard__art {
+  position: absolute;
+  pointer-events: none;
+}
+
+.profileCard__art--role {
+  top: 0;
+  bottom: 0;
+  left: 58%;
+  width: 32%;
+  clip-path: polygon(14% 0, 100% 0, 100% 100%, 0 100%);
+}
+
+.profileCard__art--schedule {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 42%;
+  clip-path: polygon(10% 0, 100% 0, 100% 100%, 0 100%);
+}
+
+.profileCard__art--city {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 56px;
+}
+
+.profileCard__art--ready {
+  right: 0;
+  bottom: 0;
+  width: 60%;
+  height: 56px;
+}
+
+.profileCard__bars {
+  position: absolute;
+  left: 22px;
+  right: 18px;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  height: 58px;
+}
+
+.profileCard__bars i {
+  width: 25px;
+  border-radius: 7px 7px 0 0;
+  background: linear-gradient(180deg, #d6e5ff 0%, #f1f6ff 100%);
+}
+
+.profileCard__bars i:nth-child(1) {
+  height: 17px;
+}
+
+.profileCard__bars i:nth-child(2) {
+  height: 26px;
+}
+
+.profileCard__bars i:nth-child(3) {
+  height: 41px;
+}
+
+.profileCard__bars i:nth-child(4) {
+  height: 56px;
+  background: linear-gradient(180deg, #4a8cff 0%, #cfe1ff 100%);
+}
+
+.profileCard__hills {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 70%;
+  height: 64px;
+}
+
+.profileSetup__resume {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  min-height: 56px;
+  margin-top: 14px;
+  padding: 6px 16px 6px 10px;
+  border: 1px solid #e8ecf3;
+  border-radius: 22px;
+  background: #f4f6fa;
+  color: var(--screen-ink);
+  font-family: inherit;
+  text-align: left;
+}
+
+.profileSetup__resume:disabled {
+  cursor: default;
+}
+
+.profileSetup__resume:disabled .profileSetup__resumeText,
+.profileSetup__resume:disabled > svg {
+  opacity: 0.55;
+}
+
+.profileSetup__resumeIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #e8eef9;
+  color: var(--screen-primary);
+}
+
+.profileSetup__resumeText {
+  flex: 1;
+  font-size: 17px;
+  font-weight: 500;
+}

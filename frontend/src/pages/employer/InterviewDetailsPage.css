@@ -1,0 +1,35 @@
+.interviewDetails {
+  padding-top: 40px;
+}
+
+.interviewDetails__heading {
+  position: relative;
+  margin-bottom: 22px;
+}
+
+.interviewDetails__title {
+  font-size: clamp(32px, 10.2vw, 48px);
+  white-space: nowrap;
+}
+
+.interviewDetails__marks {
+  top: -34px;
+  right: 2px;
+}
+
+.interviewDetails .maxNotice {
+  margin-top: 22px;
+}
+
+.interviewDetails__avatar {
+  width: 62px;
+  height: 62px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+.interviewDetails__link {
+  margin-top: 16px;
+  font-size: 18px;
+}

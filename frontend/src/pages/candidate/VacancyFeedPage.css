@@ -1,0 +1,244 @@
+.feedPage {
+  min-height: auto;
+  flex: 1;
+  padding: 26px 10px 10px;
+}
+
+.feedPage__stack {
+  position: relative;
+}
+
+.feedPage__ghost {
+  position: absolute;
+  top: -13px;
+  left: 30px;
+  right: 16px;
+  height: 60px;
+  border-radius: 28px;
+  background: #aeb5c2;
+  transform: rotate(1.2deg);
+}
+
+.feedPage__ghost--far {
+  top: -26px;
+  left: 62px;
+  right: 26px;
+  background: #d3d8e0;
+  transform: rotate(2deg);
+}
+
+.feedCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: clamp(440px, calc(100dvh - 250px), 610px);
+  padding: 17px 20px 22px 22px;
+  border-radius: 28px;
+  color: #fff;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+}
+
+.feedCard__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.feedCard__city {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 20px 0 14px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--screen-ink);
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.feedCard__filters {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  --slider-knob: transparent;
+}
+
+.feedCard__filters svg circle {
+  fill: rgba(80, 84, 96, 0.9);
+}
+
+.feedCard__info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.feedCard__company {
+  font-size: 16px;
+  opacity: 0.88;
+}
+
+.feedCard__title {
+  margin: 2px 0 0;
+  font-size: clamp(38px, 11.8vw, 48px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+.feedCard__salary {
+  margin-top: 6px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.feedCard__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.feedCard__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 15px;
+  font-weight: 500;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.feedCard__match {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  margin-top: 11px;
+  padding: 0 16px 0 7px;
+  border-radius: 999px;
+  background: var(--screen-primary);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.feedCard__matchIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--screen-primary);
+}
+
+.feedPage__error {
+  margin: 10px 4px 0;
+}
+
+.feedPage__actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px 18px 10px 22px;
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 6px 22px rgba(15, 23, 42, 0.05);
+}
+
+.feedPage__round {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 80px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--screen-ink);
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.feedPage__roundIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 53px;
+  height: 53px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.09);
+}
+
+.feedPage__apply {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 54px;
+  margin-left: auto;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--screen-primary);
+  color: #fff;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 500;
+  box-shadow: var(--screen-button-shadow);
+  cursor: pointer;
+}
+
+.feedPage__apply:disabled {
+  opacity: 0.6;
+}
+
+.feedPage--empty {
+  justify-content: center;
+  padding: 20px;
+}
+
+.feedPage__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 20px;
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: var(--screen-card-shadow);
+  text-align: center;
+}
+
+.feedPage__emptyTitle {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.feedPage__emptyText {
+  margin: 0 0 8px;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--screen-muted);
+}
