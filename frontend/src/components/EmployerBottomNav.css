@@ -1,0 +1,51 @@
+.employerNav {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin: 0 16px 16px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.1), 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+
+.employerNav__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 10px;
+  border-radius: 999px;
+  color: #8b93a7;
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.employerNav__iconWrap {
+  display: flex;
+}
+
+.employerNav__label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Активный пункт — горизонтальная синяя пилюля с иконкой и подписью в ряд,
+   как в референсе; остальные — иконка над подписью, без фона. */
+.employerNav__item--active {
+  flex-direction: row;
+  gap: 7px;
+  padding: 16px 18px;
+  background: var(--button-primary, #007aff);
+  color: #fff;
+}
+
+.employerNav__item--active .employerNav__label {
+  font-size: 13px;
+}

@@ -1,0 +1,211 @@
+.slotsPage {
+  padding-top: 16px;
+}
+
+.slotsPage__eyebrow {
+  margin-top: 16px;
+}
+
+.slotsPage__title {
+  font-size: clamp(32px, 10vw, 40px);
+  line-height: 0.98;
+}
+
+.slotsPage__subtitle {
+  margin-top: 6px;
+}
+
+.slotsPage__days {
+  display: flex;
+  gap: 10px;
+  margin: 22px -20px 0;
+  padding: 4px 20px 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 20px;
+  scrollbar-width: none;
+}
+
+.slotsPage__days::-webkit-scrollbar {
+  display: none;
+}
+
+.slotsPage__day {
+  display: flex;
+  flex: 0 0 calc((100% - 20px) / 3);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 98px;
+  padding: 0;
+  border: none;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 22px rgba(15, 23, 42, 0.06);
+  color: #4d5570;
+  font-family: inherit;
+  scroll-snap-align: start;
+  cursor: pointer;
+}
+
+.slotsPage__day span {
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--screen-ink);
+}
+
+.slotsPage__day--active {
+  background: var(--screen-primary);
+  color: #fff;
+  box-shadow: 0 12px 24px rgba(0, 110, 255, 0.26);
+}
+
+.slotsPage__day--active span {
+  color: #fff;
+}
+
+.slotsPage__dayTitle {
+  margin: 10px 0 14px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--screen-ink);
+}
+
+.slotsPage__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.slotsPage__slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 78px;
+  padding: 0 16px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 22px rgba(15, 23, 42, 0.05);
+}
+
+.slotsPage__slotText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slotsPage__slotTime {
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--screen-ink);
+}
+
+.slotsPage__slotStatus {
+  font-size: 16px;
+  color: var(--screen-muted);
+}
+
+.slotsPage__slotStatus--booked {
+  color: var(--screen-primary);
+  font-weight: 600;
+}
+
+.slotsPage__remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #eef0f4;
+  color: #4d5570;
+  cursor: pointer;
+}
+
+.slotsPage__remove:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.slotsPage__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  margin-top: 18px;
+  border: 1.5px dashed #b9cff3;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--screen-primary);
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.slotsPage__add:disabled {
+  color: var(--screen-muted);
+  border-color: var(--screen-line);
+  cursor: default;
+}
+
+.slotsPage__picker {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.slotsPage__pickerHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.slotsPage__pickerClose {
+  display: flex;
+  padding: 6px;
+  border: none;
+  border-radius: 50%;
+  background: #eef0f4;
+  color: var(--screen-ink);
+  cursor: pointer;
+}
+
+.slotsPage__times {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.slotsPage__time {
+  padding: 10px 0;
+  border: none;
+  border-radius: 12px;
+  background: var(--screen-primary-soft);
+  color: var(--screen-primary);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.slotsPage__hint {
+  margin: 20px 0 0;
+  font-size: 14px;
+  color: var(--screen-muted);
+}

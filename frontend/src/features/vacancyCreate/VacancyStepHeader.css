@@ -1,0 +1,44 @@
+.vacancyStepHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.vacancyStepHeader__back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: #f0f2f6;
+  color: #0b0f2e;
+  cursor: pointer;
+}
+
+.vacancyStepHeader__title {
+  flex: 1;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 700;
+  color: #0b0f2e;
+}
+
+.vacancyStepHeader__step {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #eaf1ff;
+  color: var(--button-primary, #007aff);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.vacancyStepHeader__spacer {
+  width: 40px;
+  flex-shrink: 0;
+}

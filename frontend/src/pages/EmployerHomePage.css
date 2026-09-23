@@ -1,0 +1,200 @@
+.employerHome {
+  padding: 20px 20px 28px;
+  background: #fff;
+}
+
+.employerHome__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.employerHome__greeting {
+  display: block;
+  color: #8b93a7;
+  font-size: 15px;
+  margin-bottom: 2px;
+}
+
+.employerHome__name {
+  display: block;
+  font-size: clamp(22px, 7vw, 32px);
+  font-weight: 800;
+  color: #0b0f2e;
+  line-height: 1.15;
+  /* Имя может быть длиннее макета — обрезаем многоточием, а не толкаем
+     аватар с колокольчиком за край экрана. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employerHome__greetingBlock {
+  min-width: 0;
+  flex: 1;
+}
+
+.employerHome__topActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.employerHome__avatar {
+  display: block;
+  line-height: 0;
+}
+
+.employerHome__bell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #f0f2f6;
+  color: #0b0f2e;
+}
+
+/* ---------- Hero: «Кого ищем сегодня?» ---------- */
+
+.employerHero {
+  position: relative;
+  overflow: visible;
+  aspect-ratio: 1.4;
+  border-radius: 28px;
+  padding: 22px;
+  background: var(--button-primary, #007aff);
+  box-shadow: 0 20px 40px rgba(0, 90, 220, 0.28);
+}
+
+.employerHero__badge {
+  position: absolute;
+  top: 20px;
+  left: 22px;
+  z-index: 3;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.employerHero__photoBox {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  aspect-ratio: 1092 / 1440;
+  z-index: 2;
+  overflow: hidden;
+  border-top-right-radius: 28px;
+  border-bottom-right-radius: 28px;
+  pointer-events: none;
+}
+
+.employerHero__photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: bottom right;
+}
+
+.employerHero__text {
+  position: relative;
+  z-index: 3;
+  max-width: 60%;
+  /* Бейдж «Быстрый старт» — absolute, выпадает из потока; отступ ставим
+     руками, чтобы после него не было лишней пустоты и текст не наезжал. */
+  margin-top: 40px;
+}
+
+.employerHero__title {
+  display: block;
+  font-size: clamp(26px, 7.5vw, 32px);
+  font-weight: 800;
+  line-height: 1.08;
+  color: #fff;
+  margin-bottom: 10px;
+}
+
+.employerHero__subtitle {
+  display: block;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.employerHero__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 20px;
+  padding: 15px 22px;
+  border-radius: 999px;
+  background: #fff;
+  color: #0b0f2e;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-decoration: none;
+  box-shadow: 0 8px 20px rgba(0, 20, 60, 0.18);
+}
+
+.employerHero__cta:active {
+  transform: scale(0.98);
+}
+
+/* ---------- Мои вакансии ---------- */
+
+.employerVacancies {
+  margin-top: 28px;
+}
+
+.employerVacancies__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.employerVacancies__heading {
+  font-size: clamp(20px, 6vw, 24px);
+  font-weight: 800;
+  color: #0b0f2e;
+}
+
+.employerVacancies__all {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--button-primary, #007aff);
+  font-weight: 600;
+  font-size: 15px;
+  text-decoration: none;
+}
+
+.employerVacancies__empty {
+  border-radius: 20px;
+  border: 1.5px dashed #dbe2ee;
+  padding: 24px 20px;
+  text-align: center;
+}
+
+.employerVacancies__emptyTitle {
+  display: block;
+  font-weight: 700;
+  color: #0b0f2e;
+  margin-bottom: 4px;
+}
+
+.employerVacancies__emptyText {
+  display: block;
+  color: #8b93a7;
+  font-size: 14px;
+}

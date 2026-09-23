@@ -1,0 +1,24 @@
+.interviewScheduled {
+  padding-top: 40px;
+}
+
+.interviewScheduled__eyebrow {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--screen-primary);
+}
+
+.interviewScheduled__title {
+  margin: 6px 0 16px;
+  font-size: clamp(44px, 13.4vw, 54px);
+  line-height: 0.98;
+}
+
+.interviewScheduled .maxNotice {
+  margin-top: 22px;
+}
+
+.interviewScheduled__link {
+  margin-top: 12px;
+  font-size: 18px;
+}

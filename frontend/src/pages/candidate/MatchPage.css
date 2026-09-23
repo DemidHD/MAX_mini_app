@@ -1,0 +1,152 @@
+.matchPage {
+  padding: 0;
+  background: var(--screen-primary);
+  color: #fff;
+}
+
+.matchPage__top {
+  padding: 26px 24px 0;
+}
+
+.matchPage__brand {
+  margin: 0 0 28px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.matchPage__title {
+  color: #fff;
+  font-size: clamp(30px, 9.8vw, 44px);
+}
+
+.matchPage__subtitle {
+  margin: 10px 0 0;
+  font-size: 18px;
+  line-height: 1.2;
+  opacity: 0.92;
+}
+
+.matchPage__scene {
+  position: relative;
+  flex: 1;
+  min-height: 372px;
+  margin-top: 20px;
+}
+
+.matchPage__marks--top {
+  top: 0;
+  right: 14px;
+}
+
+.matchPage__marks--bottom {
+  bottom: 30px;
+  left: 12px;
+  transform: rotate(180deg);
+}
+
+.matchPage__card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 12px 12px 16px;
+  border-radius: 26px;
+  box-shadow: 0 24px 40px rgba(0, 30, 110, 0.28);
+}
+
+.matchPage__card--you {
+  top: 22px;
+  left: 6px;
+  width: 50%;
+  height: 278px;
+  background: #fff;
+  color: var(--screen-ink);
+  transform: rotate(-6deg);
+}
+
+.matchPage__card--employer {
+  top: 36px;
+  right: 6px;
+  width: 56%;
+  height: 320px;
+  background: #151823;
+  color: #fff;
+  transform: rotate(5deg);
+}
+
+.matchPage__cardLabel {
+  font-size: 15px;
+  opacity: 0.6;
+}
+
+.matchPage__card--employer .matchPage__cardLabel {
+  opacity: 0.75;
+}
+
+.matchPage__cardTitle {
+  margin-top: 2px;
+  font-size: clamp(19px, 5.8vw, 25px);
+  white-space: nowrap;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.matchPage__cardPhoto {
+  flex: 1;
+  margin-top: 12px;
+  border-radius: 22px;
+}
+
+.matchPage__check {
+  position: absolute;
+  top: 128px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-left: -28px;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--screen-primary);
+  box-shadow: 0 10px 24px rgba(0, 30, 110, 0.3);
+}
+
+.matchPage__sheet {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 20px 28px;
+  border-radius: 30px 30px 0 0;
+  background: #fff;
+  color: var(--screen-ink);
+}
+
+.matchPage__handle {
+  width: 42px;
+  height: 5px;
+  margin-bottom: 30px;
+  border-radius: 3px;
+  background: #d5dae3;
+}
+
+.matchPage__sheetTitle {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.matchPage__sheetText {
+  margin: 8px 0 0;
+  font-size: 16px;
+  color: var(--screen-muted);
+}
+
+.matchPage__cta {
+  margin-top: 30px;
+  font-weight: 500;
+}

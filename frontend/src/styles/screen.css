@@ -1,0 +1,203 @@
+/*
+ * Общие элементы экранов по макетам P0: крупный заголовок, серый
+ * подзаголовок, круглая кнопка «назад», основные кнопки, синие штрихи-акценты.
+ * Экран-специфичная вёрстка живёт в CSS рядом со страницей.
+ */
+
+:root {
+  --screen-ink: #0b0f2e;
+  --screen-muted: #8b93a7;
+  --screen-text: #4b5268;
+  --screen-primary: var(--button-primary, #007aff);
+  --screen-primary-soft: #e8f0fe;
+  --screen-surface: #f2f5fa;
+  --screen-line: #e4e8f0;
+  --screen-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px rgba(15, 23, 42, 0.07);
+  --screen-button-shadow: 0 12px 24px rgba(0, 110, 255, 0.24);
+}
+
+.screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 20px 20px 28px;
+  background: #fbfcfe;
+  color: var(--screen-ink);
+  overflow-x: hidden;
+}
+
+.screen__spacer {
+  flex: 1;
+  min-height: 16px;
+}
+
+.screen__eyebrow {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--screen-muted);
+}
+
+.screen__title {
+  margin: 0;
+  font-size: clamp(34px, 10.6vw, 44px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  color: var(--screen-ink);
+}
+
+.screen__subtitle {
+  margin: 8px 0 0;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--screen-muted);
+}
+
+.screen__logo {
+  margin: 0 0 30px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--screen-ink);
+}
+
+.screen__logo span {
+  color: var(--screen-primary);
+}
+
+/* Круглая кнопка «назад»: серая на светлом фоне, белая с тенью на карточках. */
+.backButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #eef1f6;
+  color: var(--screen-ink);
+  cursor: pointer;
+}
+
+.backButton--raised {
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+.backButton--glass {
+  background: rgba(255, 255, 255, 0.28);
+  color: #fff;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.screenButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+
+.screenButton:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.screenButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.screenButton--primary {
+  background: var(--screen-primary);
+  color: #fff;
+  box-shadow: var(--screen-button-shadow);
+}
+
+.screenButton--outline {
+  background: transparent;
+  color: var(--screen-ink);
+  box-shadow: inset 0 0 0 1.5px #d3d8e2;
+}
+
+.screenButton--outlinePrimary {
+  background: transparent;
+  color: var(--screen-primary);
+  box-shadow: inset 0 0 0 1.5px var(--screen-primary);
+}
+
+.screenButton--link {
+  min-height: 44px;
+  background: none;
+  color: var(--screen-primary);
+  font-weight: 500;
+}
+
+.screen__note {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--screen-muted);
+}
+
+.screen__error {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #fff1f0;
+  color: #c4291c;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+/* Две синие черточки-«искры» из макетов (декор, не картинка). */
+.accentMarks {
+  position: absolute;
+  width: 44px;
+  height: 40px;
+  pointer-events: none;
+  color: var(--screen-primary);
+}
+
+.accentMarks--light {
+  color: #fff;
+}
+
+/* Место под фотографию/иллюстрацию. Сами изображения будут добавлены
+   отдельно — до этого слот держит размеры и скругления макета. */
+.photoSlot {
+  display: block;
+  background: linear-gradient(160deg, #dfe4ec 0%, #c9d0dc 100%);
+  overflow: hidden;
+}
+
+.photoSlot--dark {
+  background: linear-gradient(170deg, #4a4f5c 0%, #2a2d35 55%, #16181d 100%);
+}
+
+.photoSlot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

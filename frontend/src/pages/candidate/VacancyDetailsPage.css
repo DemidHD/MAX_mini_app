@@ -1,0 +1,118 @@
+.vacancyDetails {
+  padding: 0 0 28px;
+}
+
+.vacancyDetails__hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 365px;
+  padding: 16px 14px 20px 26px;
+  border-radius: 0 0 28px 28px;
+  color: #fff;
+}
+
+.vacancyDetails__heroTop {
+  display: flex;
+  justify-content: space-between;
+  margin-left: -12px;
+}
+
+.vacancyDetails__more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.vacancyDetails__heroText {
+  display: flex;
+  flex-direction: column;
+}
+
+.vacancyDetails__company {
+  font-size: 17px;
+  opacity: 0.9;
+}
+
+.vacancyDetails__title {
+  margin: 2px 0 0;
+  font-size: clamp(38px, 11.8vw, 48px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+.vacancyDetails__salary {
+  margin-top: 6px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.vacancyDetails__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 18px 20px 0 22px;
+}
+
+.vacancyDetails__facts,
+.vacancyDetails__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 9px;
+}
+
+.vacancyDetails__fact,
+.vacancyDetails__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 39px;
+  padding: 0 18px 0 16px;
+  border-radius: 999px;
+  background: #eef2fa;
+  color: var(--screen-ink);
+  font-size: 16px;
+}
+
+.vacancyDetails__fact svg,
+.vacancyDetails__chip svg {
+  flex-shrink: 0;
+  color: var(--screen-primary);
+}
+
+.vacancyDetails__chip {
+  border-radius: 20px;
+}
+
+.vacancyDetails__section {
+  margin-top: 28px;
+}
+
+.vacancyDetails__sectionTitle {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--screen-ink);
+}
+
+.vacancyDetails__description {
+  margin: -4px 0 0;
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--screen-muted);
+  white-space: pre-line;
+}
+
+.vacancyDetails__apply {
+  margin-top: 28px;
+}
