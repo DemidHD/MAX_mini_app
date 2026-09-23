@@ -94,3 +94,30 @@ class InterviewStatus(StrEnum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     NO_SHOW = "no_show"
+
+
+class NotificationType(StrEnum):
+    """Раздел 46. Здесь только обязательные для P0 типы.
+
+    Остальные (`application_rejected`, `interview_cancelled` и другие)
+    добавляются вместе с функциями P1–P2.
+    """
+
+    APPLICATION_CREATED = "application_created"
+    CANDIDATE_INVITED = "candidate_invited"
+    MUTUAL_INTEREST = "mutual_interest"
+    INTERVIEW_SLOT_AVAILABLE = "interview_slot_available"
+    INTERVIEW_BOOKED = "interview_booked"
+
+
+class NotificationStatus(StrEnum):
+    """Состояние доставки уведомления. Раздел 48.
+
+    `pending` — уведомление заведено, но не доставлено: отправка ещё не
+    удалась либо канал отключён. Такое уведомление можно отправить повторно,
+    `sent` — нельзя (раздел 50).
+    """
+
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"

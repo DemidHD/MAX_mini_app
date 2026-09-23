@@ -1,0 +1,54 @@
+"""Эндпоинты вакансии. Разделы 27, 28, 29 тех-доки.
+
+Два роутера: вакансия живёт под `/vacancies`, список кабинета работодателя —
+под `/employer`, как их разделяет раздел 27.
+
+Важно: этот роутер подключается после ленты, иначе `/vacancies/feed` попадёт
+в `GET /vacancies/{vacancy_id}` как параметр пути.
+"""
+
+from fastapi import APIRouter, Query, status
+
+from app.auth.dependencies import CurrentUser, EmployerUser
+from app.vacancies import service
+from app.vacancies.schemas import (
+    VacancyCreateRequest,
+    VacancyListResponse,
+    VacancyRead,
+    VacancyUpdateRequest,
+)
+
+router = APIRouter(prefix="/vacancies", tags=["vacancies"])
+employer_router = APIRouter(prefix="/employer", tags=["vacancies"])
+
+
+@router.post("", response_model=VacancyRead, status_code=status.HTTP_201_CREATED)
+async def create_vacancy(
+    payload: VacancyCreateRequest, user: EmployerUser
+) -> VacancyRead:
+    """Создаёт вакансию вместе с условиями и вопросами отбора."""
+    return await service.create_vacancy(user, payload)
+
+
+@router.get("/{vacancy_id}", response_model=VacancyRead)
+async def get_vacancy(vacancy_id: int, user: CurrentUser) -> VacancyRead:
+    """Вакансия: работодателю — своя в любом статусе, кандидату — опубликованная."""
+    return await service.get_vacancy(user, vacancy_id)
+
+
+@router.patch("/{vacancy_id}", response_model=VacancyRead)
+async def update_vacancy(
+    vacancy_id: int, payload: VacancyUpdateRequest, user: EmployerUser
+) -> VacancyRead:
+    """Меняет вакансию. Публикация и закрытие — через поле `status`."""
+    return await service.update_vacancy(user, vacancy_id, payload)
+
+
+@employer_router.get("/vacancies", response_model=VacancyListResponse)
+async def list_own_vacancies(
+    user: EmployerUser,
+    limit: int = Query(default=20, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+) -> VacancyListResponse:
+    """Вакансии текущего работодателя для его кабинета."""
+    return await service.list_own_vacancies(user, limit=limit, offset=offset)

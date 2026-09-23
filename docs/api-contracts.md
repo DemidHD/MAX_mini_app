@@ -18,6 +18,197 @@ backend. Frontend не должен угадывать формат, backend н�
 
 ---
 
+## POST /api/auth/max
+
+Auth: не требуется — этим запросом сессия и создаётся.
+
+Request:
+
+```json
+{"init_data": "auth_date=...&user=...&hash=..."}
+```
+
+`init_data` — **исходная строка** `window.WebApp.initData` целиком, без
+пересборки на frontend. Отправлять вместо неё `user_id` нельзя: личность
+подтверждается только подписью (раздел 6).
+
+Response 200:
+
+```json
+{
+  "user": {
+    "user_id": 100500,
+    "first_name": "Иван",
+    "last_name": "Петров",
+    "username": "ivan_petrov",
+    "language_code": "ru",
+    "role": null,
+    "has_avatar": false,
+    "avatar_updated_at": null
+  },
+  "current_step": "role_selection",
+  "application_id": null
+}
+```
+
+Ответ ставит HTTP-only cookie сессии. Все остальные запросы идут с ней;
+`user_id` в теле запроса backend не принимает нигде.
+
+`role` у нового пользователя — `null`: авторизация роль не назначает
+(раздел 8).
+
+`current_step` — шаг, на который нужно вернуть пользователя при повторном
+открытии Mini App (раздел 7):
+
+```text
+role_selection      роль не выбрана
+candidate_profile   кандидат без профиля
+feed                кандидат с профилем без активного отклика
+application_status  кандидат с активным откликом (+ application_id)
+vacancy_create      работодатель без вакансий
+employer_home       работодатель с вакансиями
+```
+
+`application_id` заполняется только для шага `application_status`.
+
+Повторная авторизация не перезаписывает изменённые пользователем `first_name`
+и `last_name` данными MAX.
+
+Errors:
+
+```text
+401 invalid_init_data — подпись не сошлась или `auth_date` слишком старый
+422 validation_error  — пустая строка `init_data`
+429 rate_limited      — слишком часто; details: {"retry_after_seconds": ...}
+```
+
+---
+
+## GET /api/users/me
+
+Auth: любая роль, в том числе ещё не выбранная.
+
+Response 200: объект `user` в том же виде, что в ответе авторизации.
+
+`has_avatar` показывает, установлена ли аватарка; сам файл отдаёт
+`GET /api/users/me/avatar`.
+
+Errors:
+
+```text
+401 unauthorized — нет сессии
+```
+
+---
+
+## PATCH /api/users/me/profile
+
+Auth: любая роль.
+
+Request:
+
+```json
+{"first_name": "Алексей", "last_name": "Иванов"}
+```
+
+Меняются только имя и фамилия текущего пользователя. Имя очистить нельзя
+(колонка NOT NULL), фамилию можно — пустой строкой или `null`.
+
+Response 200: объект `user`.
+
+Errors:
+
+```text
+401 unauthorized     — нет сессии
+422 validation_error — пустое имя или длина больше 100 символов
+```
+
+---
+
+## PATCH /api/users/me/role
+
+Auth: любая роль.
+
+Request:
+
+```json
+{"role": "employer"}
+```
+
+Допустимые значения — `candidate` и `employer`. Смена уже выбранной роли не
+запрещена; повторная установка той же роли ничего не меняет.
+
+Response 200: объект `user`.
+
+Errors:
+
+```text
+401 unauthorized     — нет сессии
+422 validation_error — значение вне enum
+```
+
+---
+
+## GET /api/users/me/avatar
+
+Auth: любая роль.
+
+Отдаёт файл аватарки **текущего** пользователя. Чужой файл получить нельзя:
+путь строится из сессии, а не из параметров запроса.
+
+Response 200: содержимое файла.
+
+Errors:
+
+```text
+401 unauthorized     — нет сессии
+404 avatar_not_found — аватарка не установлена
+```
+
+---
+
+## PATCH /api/users/me/avatar
+
+Auth: любая роль. Тело — `multipart/form-data`, поле `file`.
+
+Устанавливает аватарку, а если она уже есть — заменяет. Отдельного `POST` нет
+(раздел 27). Старый файл удаляется после успешного сохранения нового.
+
+Тип определяется по содержимому файла, а не по имени и заголовку: переименованный
+`.exe` не пройдёт. Допустимые типы и предел размера задаются настройками
+`AVATAR_ALLOWED_MIME_TYPES` и `AVATAR_MAX_SIZE_BYTES`.
+
+Response 200: объект `user` с обновлёнными `has_avatar` и `avatar_updated_at`.
+
+Errors:
+
+```text
+401 unauthorized          — нет сессии
+422 empty_file            — пустой файл
+422 file_too_large        — больше AVATAR_MAX_SIZE_BYTES
+422 unsupported_file_type — содержимое не входит в белый список типов
+422 validation_error      — файл не передан
+```
+
+---
+
+## DELETE /api/users/me/avatar
+
+Auth: любая роль.
+
+Удаляет файл и очищает `avatar_path`, `avatar_updated_at`.
+
+Response 204: тело пустое.
+
+Errors:
+
+```text
+401 unauthorized     — нет сессии
+404 avatar_not_found — аватарки и так нет
+```
+
+---
+
 ## GET /api/candidate/profile
 
 Auth: `candidate`.
@@ -98,6 +289,209 @@ Errors:
 
 Изменение профиля не трогает `screening_answers`: ответы первичного отбора
 привязаны к отклику и остаются историческими.
+
+---
+
+## POST /api/vacancies
+
+Auth: `employer`. `employer_id` в теле не принимается — берётся из сессии.
+
+Request:
+
+```json
+{
+  "title": "Бариста в центре",
+  "location": "Москва",
+  "salary_min": "60000",
+  "salary_max": "90000",
+  "schedule": "full_time",
+  "status": "draft",
+  "criteria": [
+    {"type": "location", "required": true, "value": {"city": "Москва"}},
+    {"type": "experience", "required": false, "value": {"min_months": 12}, "weight": "0.80"}
+  ],
+  "questions": [
+    {
+      "question": "Есть ли действующая медкнижка?",
+      "type": "boolean",
+      "required": true,
+      "validation_rules": {"must_equal": true}
+    }
+  ]
+}
+```
+
+Обязателен только `title`. `status` — `draft` (по умолчанию) или `published`;
+`closed` при создании не принимается. Публикация сразу при создании возможна,
+если заполнено всё, что требует раздел 29 (см. ниже).
+
+`criteria` (до 20) и `questions` (до 6) создаются тем же запросом. Формат
+`value` и `validation_rules` — в конце документа; условие, которое подбор не
+сможет прочитать, отклоняется, а не сохраняется молча. Порядок вопросов
+задаёт сам список: `sort_order` в теле не принимается и проставляется с 1.
+
+Раздел 18: в P0 вопросов 3–4, верхняя граница P1 — 6. Backend разрешает до 6,
+продуктовое ограничение остаётся за интерфейсом.
+
+Response 201: объект вакансии (см. `GET /api/vacancies/{id}`).
+
+Errors:
+
+```text
+401 unauthorized                — нет сессии
+403 role_not_selected           — роль ещё не выбрана
+403 wrong_role                  — роль не employer
+422 vacancy_incomplete          — публикация без обязательных данных;
+                                  details: {"missing": ["location", "salary", ...]}
+422 vacancy_criteria_invalid    — details: [{"index": 0, "type": "...", "code": "...", "details": {...}}]
+422 screening_questions_invalid — details: [{"index": 0, "code": "...", "details": {...}}]
+422 validation_error            — длина, тип, отрицательная зарплата,
+                                  `salary_min > salary_max`, `status: "closed"`
+```
+
+---
+
+## GET /api/vacancies/{id}
+
+Auth: `employer` или `candidate`.
+
+Работодатель открывает **только свою** вакансию в любом статусе. Кандидат —
+опубликованную или ту, на которую уже откликнулся (иначе закрытая вакансия
+исчезла бы из его же отклика). Всё остальное — `404`.
+
+Response 200:
+
+```json
+{
+  "id": 4,
+  "employer_id": 100500,
+  "title": "Бариста в центре",
+  "location": "Москва",
+  "salary_min": "60000.00",
+  "salary_max": "90000.00",
+  "schedule": "full_time",
+  "status": "published",
+  "public_token": "0Kb1x...",
+  "public_url": "https://example.com/v/0Kb1x...",
+  "applications_count": 3,
+  "criteria": [
+    {"id": 7, "type": "location", "required": true, "value": {"city": "Москва"}, "weight": null}
+  ],
+  "questions": [
+    {
+      "id": 11,
+      "question": "Есть ли действующая медкнижка?",
+      "type": "boolean",
+      "required": true,
+      "sort_order": 1,
+      "validation_rules": {"must_equal": true}
+    }
+  ],
+  "created_at": "2026-09-22T10:00:00Z",
+  "updated_at": "2026-09-22T10:00:00Z"
+}
+```
+
+Кандидату `public_token`, `public_url` и `applications_count` приходят как
+`null`, а в `validation_rules` не попадает `must_equal`: зная отсекающее
+условие, ответ можно подогнать.
+
+`public_url` — ссылка вида `{APP_URL}/v/{public_token}` (раздел 15). Токен
+выдаётся один раз при первой публикации и при повторной не меняется.
+
+Errors:
+
+```text
+401 unauthorized      — нет сессии
+403 role_not_selected — роль ещё не выбрана
+404 vacancy_not_found — вакансии нет, она чужая или недоступна этой роли
+```
+
+---
+
+## PATCH /api/vacancies/{id}
+
+Auth: `employer`, вакансия должна принадлежать текущему пользователю.
+
+Поле, которого нет в запросе, не меняется. Явный `null` — очистка, допустимая
+только для необязательных полей.
+
+Публикация и закрытие выполняются этим же эндпоинтом через `status`:
+отдельного эндпоинта раздел 27 не заводит.
+
+```json
+{"status": "published"}
+```
+
+Допустимые переходы:
+
+```text
+draft     → published, closed
+published → closed
+closed    → published
+```
+
+`published → draft` — `409`: по опубликованной вакансии уже могли прийти
+отклики, и «черновик с откликами» ничего не означает. Чтобы перестать
+набирать, вакансия закрывается. Перевод в тот же статус ошибкой не является.
+
+Для публикации обязательны (раздел 29): `title`, `location`, `schedule` и
+зарплата — достаточно одной из границ `salary_min` / `salary_max`.
+
+`criteria` и `questions` заменяются **целиком**: форма вакансии присылает
+набор условий полностью. Замена вопросов запрещена, если по вакансии уже есть
+отклики: она удалила бы вопросы, а каскадом и сохранённые ответы кандидатов
+(раздел 83). Условия менять можно всегда — карточка работодателя показывает
+снимок, сделанный на отборе.
+
+Response 200: объект вакансии.
+
+Errors:
+
+```text
+401 unauthorized                      — нет сессии
+403 wrong_role                        — роль не employer
+404 vacancy_not_found                 — вакансии нет либо она чужая
+409 invalid_vacancy_status_transition — details: {"status": ..., "target": ...}
+409 vacancy_has_applications          — замена вопросов при существующих откликах
+422 vacancy_incomplete                — публикация без обязательных данных
+422 salary_range_invalid              — итоговый `salary_min` выше `salary_max`
+422 vacancy_criteria_invalid          — условия заполнены неверно
+422 screening_questions_invalid       — вопросы заполнены неверно
+```
+
+---
+
+## GET /api/employer/vacancies
+
+Auth: `employer`.
+
+Эндпоинта нет в разделе 27, но `current_step = employer_home` (раздел 7) без
+списка вакансий не на чем показать.
+
+Query: `limit` (1–50, по умолчанию 20), `offset` (≥ 0).
+
+Response 200:
+
+```json
+{
+  "items": [ { "...": "объект вакансии" } ],
+  "limit": 20,
+  "offset": 0,
+  "total": 2
+}
+```
+
+Только вакансии текущего работодателя, новые сверху. У каждой заполнен
+`applications_count` — число откликов по вакансии.
+
+Errors:
+
+```text
+401 unauthorized      — нет сессии
+403 wrong_role        — роль не employer
+422 validation_error  — недопустимые limit/offset
+```
 
 ---
 
@@ -470,9 +864,21 @@ Response 200:
 ```json
 {
   "application_id": 7,
-  "status": "invited",
+  "status": "mutual_interest",
   "action": "invited",
   "reject_reason": null,
+  "match_id": 3,
+  "decided_at": "2026-09-22T10:00:00Z"
+}
+```
+
+```json
+{
+  "application_id": 8,
+  "status": "rejected",
+  "action": "rejected",
+  "reject_reason": "experience",
+  "match_id": null,
   "decided_at": "2026-09-22T10:00:00Z"
 }
 ```
@@ -480,9 +886,15 @@ Response 200:
 Допустимые переходы в P0:
 
 ```text
-passed → invited
+passed → invited → mutual_interest   (одна операция)
 passed → rejected
 ```
+
+Приглашение сразу создаёт взаимный интерес (раздел 36): `invited` — состояние
+внутри операции, наружу отклик выходит уже в `mutual_interest`, а `match_id`
+возвращается тем же ответом. Отдельного подтверждения от кандидата сценарий не
+предусматривает: он выразил интерес откликом. `match_id` нужен frontend, чтобы
+перейти к выбору слота (`POST /api/matches/{id}/book`).
 
 Решение принимается один раз: повторный запрос по тому же отклику — `409`.
 Отклик, не прошедший отбор (`screening`, `hard_filter_failed`), решению не
@@ -498,9 +910,229 @@ Errors:
 404 application_not_found         — отклика нет либо вакансия чужая
 409 invalid_state_transition      — из текущего статуса решение недопустимо;
                                     details: {"status": ..., "target": ...}
+409 match_already_exists          — у отклика уже есть взаимный интерес
+                                    (расхождение данных, решение не записано)
 422 decision_action_not_supported — `reserved`: резерв относится к P1
 422 reject_reason_not_applicable  — причина отказа передана не с `rejected`
 422 validation_error              — неизвестное действие или причина отказа
+```
+
+---
+
+## POST /api/vacancies/{id}/slots
+
+Auth: `employer`, вакансия должна принадлежать текущему пользователю.
+
+Один запрос — один слот. Пакетное создание тех-докой не описано: чтобы завести
+несколько интервалов, frontend вызывает эндпоинт несколько раз.
+
+Request:
+
+```json
+{
+  "starts_at": "2026-10-01T12:00:00+03:00",
+  "ends_at": "2026-10-01T13:00:00+03:00"
+}
+```
+
+Время принимается **только со смещением** (`Z` или `+03:00`). Значение без
+смещения — `422 validation_error`: в каком поясе назначено собеседование,
+угадывать нельзя. Backend хранит и возвращает время в UTC.
+
+`employer_id` в теле не принимается: работодатель берётся из сессии.
+
+Response 201:
+
+```json
+{
+  "id": 12,
+  "vacancy_id": 4,
+  "starts_at": "2026-10-01T09:00:00Z",
+  "ends_at": "2026-10-01T10:00:00Z",
+  "status": "available"
+}
+```
+
+Проверки интервала:
+
+```text
+ends_at > starts_at
+starts_at в будущем
+длительность от 5 минут до 8 часов
+нет пересечения с действующими слотами этого работодателя
+```
+
+Границы длительности — вне тех-доки (раздел 22 описывает только начало и
+конец); они заданы настройками `INTERVIEW_SLOT_MIN_DURATION_MINUTES` и
+`INTERVIEW_SLOT_MAX_DURATION_HOURS`. Пересечения проверяются по всем вакансиям
+работодателя: два собеседования одновременно один человек не проведёт. Слот,
+начинающийся ровно в момент окончания предыдущего, пересечением не считается.
+Отменённый слот новый не блокирует.
+
+Errors:
+
+```text
+401 unauthorized          — нет сессии
+403 role_not_selected     — роль ещё не выбрана
+403 wrong_role            — роль не employer
+404 vacancy_not_found     — вакансии нет либо она чужая
+409 slot_overlaps         — пересечение; details: {"slot_id": ..., "vacancy_id": ...}
+422 slot_interval_invalid — конец не позже начала
+422 slot_in_past          — начало в прошлом
+422 slot_too_short        — details: {"min_minutes": 5}
+422 slot_too_long         — details: {"max_hours": 8}
+422 validation_error      — время без смещения или не разобрано
+```
+
+---
+
+## GET /api/vacancies/{id}/slots
+
+Auth: `employer` или `candidate` — раздел 37 описывает один эндпоинт на обе
+стороны, состав ответа зависит от того, кто спрашивает.
+
+Работодатель (владелец вакансии) видит **все действующие** слоты, включая
+занятые: ему нужна своя занятость целиком. Отменённые не показываются никому.
+
+Кандидат видит только то, что можно выбрать: слоты `available`, время которых
+ещё не прошло. Доступ открывается **после взаимного интереса** по этой
+вакансии — иначе `403 match_required`.
+
+Response 200 (кандидат):
+
+```json
+{
+  "vacancy_id": 4,
+  "items": [
+    {
+      "id": 12,
+      "vacancy_id": 4,
+      "starts_at": "2026-10-01T09:00:00Z",
+      "ends_at": "2026-10-01T10:00:00Z",
+      "status": "available"
+    }
+  ],
+  "match_id": 3,
+  "interviews": []
+}
+```
+
+Response 200 (работодатель): те же `items` (плюс занятые слоты со
+`status: "booked"`), `match_id` всегда `null`, а `interviews` — все
+назначенные собеседования по этой вакансии.
+
+`match_id` — с чем идти в `POST /api/matches/{id}/book`.
+
+`interviews` — уже назначенные собеседования: кандидату возвращается только
+его собственное (ноль или одно), работодателю — все по вакансии. Это источник
+данных для экрана «Интервью назначено» после перезагрузки Mini App и для связи
+«слот ↔ отклик» у работодателя. Занятый слот кандидату в `items` не попадает —
+своё время он видит только здесь. Личных данных кандидата в ответе нет
+(раздел 34): собеседование ссылается на отклик.
+
+Формат элемента `interviews`:
+
+```json
+{
+  "id": 5,
+  "match_id": 3,
+  "application_id": 7,
+  "vacancy_id": 4,
+  "slot": {
+    "id": 12,
+    "vacancy_id": 4,
+    "starts_at": "2026-10-01T09:00:00Z",
+    "ends_at": "2026-10-01T10:00:00Z",
+    "status": "booked"
+  },
+  "status": "scheduled",
+  "application_status": "interview_scheduled",
+  "created_at": "2026-09-22T10:05:00Z"
+}
+```
+
+Слоты отсортированы по времени начала.
+
+Errors:
+
+```text
+401 unauthorized      — нет сессии
+403 role_not_selected — роль ещё не выбрана
+403 match_required    — кандидат без взаимного интереса по этой вакансии
+404 vacancy_not_found — вакансии нет; для работодателя — ещё и чужая вакансия
+```
+
+---
+
+## DELETE /api/vacancies/{id}/slots/{slot_id}
+
+Auth: `employer`, вакансия должна принадлежать текущему пользователю.
+
+Эндпоинта отмены в тех-доке нет (раздел 37 описывает создание, чтение и
+бронирование) — он добавлен как минимально необходимый: иначе ошибочно
+созданное время убрать нечем.
+
+Слот не удаляется, а переводится в `cancelled`: на него могла ссылаться
+история, а `interviews.slot_id` защищён `RESTRICT`. Повторная отмена ничего не
+меняет и возвращает тот же `204`.
+
+Забронированный слот не отменяется: за ним стоит назначенное собеседование, а
+отмена собеседования (`interview_cancelled`) относится к P1 (раздел 46).
+
+Response 204: тело пустое.
+
+Errors:
+
+```text
+401 unauthorized      — нет сессии
+403 wrong_role        — роль не employer
+404 vacancy_not_found — вакансии нет либо она чужая
+404 slot_not_found    — слота нет либо он не относится к этой вакансии
+409 slot_booked       — слот забронирован; details: {"slot_id": ...}
+```
+
+---
+
+## POST /api/matches/{id}/book
+
+Auth: `candidate`, match должен относиться к отклику текущего кандидата.
+
+Request:
+
+```json
+{"slot_id": 12}
+```
+
+Response 201: объект `interview` (формат см. выше, в `GET .../slots`).
+
+Одна транзакция выполняет весь порядок из раздела 56: слот блокируется,
+проверяется свободным, помечается `booked`, создаётся `interviews`, отклик
+переводится в `interview_scheduled`. Это конечный результат обязательного
+маршрута P0.
+
+Повтор запроса с **тем же** слотом собеседование не дублирует (раздел 79):
+возвращается уже назначенное, но с кодом `200` вместо `201`. Другой слот —
+`409`: перенос собеседования относится к P1.
+
+Бронирование ограничено по частоте (раздел 78): при превышении — `429` с
+заголовком `Retry-After`.
+
+Errors:
+
+```text
+401 unauthorized                — нет сессии
+403 role_not_selected           — роль ещё не выбрана
+403 wrong_role                  — роль не candidate
+404 match_not_found             — match'а нет либо он относится к чужому отклику
+404 slot_not_found              — слота нет либо он от другой вакансии
+409 slot_taken                  — слот уже занят; details: {"slot_id": ...}
+409 slot_cancelled              — слот отменён работодателем
+409 slot_in_past                — время слота уже прошло
+409 interview_already_scheduled — собеседование назначено на другое время;
+                                  details: {"interview_id": ..., "slot_id": ...}
+409 invalid_state_transition    — отклик не в `mutual_interest`;
+                                  details: {"status": ..., "target": ...}
+429 rate_limited                — слишком часто; details: {"retry_after_seconds": ...}
 ```
 
 ---

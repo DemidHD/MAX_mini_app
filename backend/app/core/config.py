@@ -53,6 +53,28 @@ class Settings(BaseSettings):
     # авторизованному кандидату.
     apply_rate_limit_requests: int = 30
     apply_rate_limit_window_seconds: int = 60
+    # Раздел 78 называет бронирование второй операцией, которой нужна защита
+    book_rate_limit_requests: int = 30
+    book_rate_limit_window_seconds: int = 60
+
+    # --- Интервью ---
+    # Границы длительности слота тех-дока не задаёт (раздел 22 описывает
+    # только начало и конец). Ограничения нужны, чтобы работодатель не завёл
+    # слот на одну секунду или на месяц, и вынесены в конфигурацию.
+    interview_slot_min_duration_minutes: int = 5
+    interview_slot_max_duration_hours: int = 8
+
+    # --- Уведомления и бот (разделы 44-51) ---
+    # Канал уведомлений можно выключить, не трогая остальной backend:
+    # без бота P0-маршрут работает целиком, теряются только сообщения в MAX.
+    bot_enabled: bool = True
+    max_webhook_path: str = "/webhook/max"
+    # Адрес, который регистрируется в MAX. Пусто — берётся APP_URL + путь выше.
+    max_webhook_url: str = ""
+    notification_max_attempts: int = 3
+    notification_retry_delay_seconds: float = 0.5
+    # Часовой пояс, в котором пользователю показывается время собеседования
+    notification_timezone: str = "Europe/Moscow"
 
     # --- Локальное файловое хранилище ---
     storage_root: Path = Path("/app/storage")
