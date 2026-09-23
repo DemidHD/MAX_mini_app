@@ -1,7 +1,7 @@
-"""Карточка кандидата и решение работодателя.
+"""Карточка кандидата, решение работодателя и взаимный интерес.
 
 `GET /api/employer/vacancies/{id}/candidates`, `POST /api/applications/{id}/decision`.
-Разделы 20, 26, 34, 35, 56 тех-доки.
+Разделы 20, 26, 34, 35, 36, 56 тех-доки.
 """
 
 import asyncio
@@ -15,7 +15,7 @@ from httpx import AsyncClient
 
 from app.analytics.models import AnalyticsEvent
 from app.applications import employer_service
-from app.applications.models import Application, EmployerDecision
+from app.applications.models import Application, EmployerDecision, Match
 from app.candidates.models import CandidateProfile
 from app.core.database import utcnow
 from app.core.enums import (
@@ -367,6 +367,7 @@ async def test_invalid_pagination_is_rejected(client: AsyncClient) -> None:
 async def test_invite_moves_application_and_writes_decision(
     client: AsyncClient,
 ) -> None:
+    """Приглашение доводит отклик до взаимного интереса (разделы 26, 36)."""
     employer = await _employer(client)
     vacancy = await _vacancy(employer)
     application = await _application(vacancy, await _candidate())
@@ -375,16 +376,19 @@ async def test_invite_moves_application_and_writes_decision(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["status"] == ApplicationStatus.INVITED.value
+    assert body["status"] == ApplicationStatus.MUTUAL_INTEREST.value
     assert body["action"] == DecisionAction.INVITED.value
     assert body["reject_reason"] is None
 
     await application.refresh_from_db()
-    assert application.status == ApplicationStatus.INVITED
+    assert application.status == ApplicationStatus.MUTUAL_INTEREST
 
     decision = await EmployerDecision.get(application_id=application.id)
     assert decision.action == DecisionAction.INVITED
     assert decision.reject_reason is None
+
+    match = await Match.get(application_id=application.id)
+    assert body["match_id"] == match.id
 
 
 async def test_reject_with_reason_is_saved(client: AsyncClient) -> None:
@@ -529,8 +533,9 @@ async def test_concurrent_decisions_produce_one(client: AsyncClient) -> None:
         409,
     ]
     assert await EmployerDecision.filter(application_id=application.id).count() == 1
+    assert await Match.filter(application_id=application.id).count() == 1
     await application.refresh_from_db()
-    assert application.status == ApplicationStatus.INVITED
+    assert application.status == ApplicationStatus.MUTUAL_INTEREST
 
 
 # --- Права на решение -------------------------------------------------------
@@ -585,7 +590,7 @@ async def test_unknown_application_returns_404(client: AsyncClient) -> None:
 
 
 async def test_decision_writes_analytics_event(client: AsyncClient) -> None:
-    """Раздел 60: `candidate_invited` / `candidate_rejected`."""
+    """Раздел 60: `candidate_invited` / `candidate_rejected` / `match_created`."""
     employer = await _employer(client)
     vacancy = await _vacancy(employer)
     invited = await _application(vacancy, await _candidate())
@@ -594,11 +599,23 @@ async def test_decision_writes_analytics_event(client: AsyncClient) -> None:
     await _decide(client, invited, action="invited")
     await _decide(client, rejected, action="rejected", reject_reason="salary")
 
-    events = await AnalyticsEvent.filter(user_id=employer.user_id).order_by("id")
+    # События доставки уведомлений сюда же попадают, но проверяются отдельно
+    events = [
+        event
+        for event in await AnalyticsEvent.filter(user_id=employer.user_id).order_by("id")
+        if event.event_name != "notification_sent"
+    ]
     assert [event.event_name for event in events] == [
         "candidate_invited",
+        "match_created",
         "candidate_rejected",
     ]
+    match = await Match.get(application_id=invited.id)
+    assert events[1].payload == {
+        "match_id": match.id,
+        "application_id": invited.id,
+        "vacancy_id": vacancy.id,
+    }
     assert events[-1].payload["reject_reason"] == "salary"
 
 
@@ -728,4 +745,68 @@ async def test_decision_still_possible_after_profile_change(
     response = await _decide(client, application, action="invited")
 
     assert response.status_code == 200, response.text
-    assert response.json()["status"] == ApplicationStatus.INVITED.value
+    assert response.json()["status"] == ApplicationStatus.MUTUAL_INTEREST.value
+
+
+# --- Взаимный интерес -------------------------------------------------------
+
+
+async def test_rejection_does_not_create_match(client: AsyncClient) -> None:
+    employer = await _employer(client)
+    vacancy = await _vacancy(employer)
+    application = await _application(vacancy, await _candidate())
+
+    response = await _decide(client, application, action="rejected")
+
+    assert response.json()["match_id"] is None
+    assert not await Match.filter(application_id=application.id).exists()
+
+
+async def test_match_is_created_once_per_application(client: AsyncClient) -> None:
+    """`matches.application_id` UNIQUE (раздел 55): второго match не бывает."""
+    employer = await _employer(client)
+    vacancy = await _vacancy(employer)
+    application = await _application(vacancy, await _candidate())
+    assert (await _decide(client, application, action="invited")).status_code == 200
+
+    repeated = await _decide(client, application, action="invited")
+
+    assert repeated.status_code == 409
+    assert repeated.json()["error"]["code"] == "invalid_state_transition"
+    assert await Match.filter(application_id=application.id).count() == 1
+
+
+async def test_existing_match_blocks_invitation_and_rolls_back(
+    client: AsyncClient,
+) -> None:
+    """Расхождение данных не должно давать отклик без match или наоборот.
+
+    Match у отклика в `passed` появиться неоткуда — он создаётся только
+    приглашением. Если такой всё же есть, приглашение обязано отказать
+    целиком: решение не записывается, статус не меняется.
+    """
+    employer = await _employer(client)
+    vacancy = await _vacancy(employer)
+    application = await _application(vacancy, await _candidate())
+    await Match.create(application_id=application.id)
+
+    response = await _decide(client, application, action="invited")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "match_already_exists"
+    await application.refresh_from_db()
+    assert application.status == ApplicationStatus.PASSED
+    assert await EmployerDecision.filter(application_id=application.id).count() == 0
+
+
+async def test_invited_candidate_stays_in_list_with_mutual_interest(
+    client: AsyncClient,
+) -> None:
+    employer = await _employer(client)
+    vacancy = await _vacancy(employer)
+    application = await _application(vacancy, await _candidate())
+    await _decide(client, application, action="invited")
+
+    body = (await _candidates(client, vacancy)).json()
+
+    assert body["items"][0]["status"] == ApplicationStatus.MUTUAL_INTEREST.value

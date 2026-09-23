@@ -42,6 +42,7 @@ from app.candidates.models import CandidateProfile
 from app.core.enums import ApplicationStatus, CriterionType, VacancyStatus
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.matching.rules import CriterionResult, evaluate_vacancy
+from app.notifications.service import notification_service
 from app.users.models import User
 from app.vacancies.models import ScreeningQuestion, Vacancy, VacancyCriterion
 
@@ -61,8 +62,8 @@ async def apply(user: User, vacancy_id: int) -> tuple[Application, bool]:
     единственность обеспечивает `UNIQUE(vacancy_id, candidate_id)`, и
     параллельный запрос ловится через `IntegrityError`.
 
-    Уведомление `application_created` работодателю (раздел 46) подключается
-    на этапе 7 — после commit, ошибка отправки отклик не отменяет.
+    Уведомление `application_created` работодателю (раздел 46) отправляется
+    после создания: ошибка отправки отклик не отменяет (раздел 47).
 
     Возвращает отклик и признак того, что он создан именно этим запросом.
     """
@@ -99,6 +100,11 @@ async def apply(user: User, vacancy_id: int) -> tuple[Application, bool]:
         "application_created",
         user_id=user.user_id,
         payload={"application_id": application.id, "vacancy_id": vacancy.id},
+    )
+    await notification_service.application_created(
+        employer_id=vacancy.employer_id,
+        application_id=application.id,
+        vacancy_title=vacancy.title,
     )
     logger.info("Создан отклик %s на вакансию %s", application.id, vacancy.id)
     return application, True

@@ -1,6 +1,6 @@
 """Схемы отклика: первичный отбор, карточка кандидата, решение работодателя.
 
-Разделы 18, 19, 20, 27, 33, 34, 35 тех-доки.
+Разделы 18, 19, 20, 27, 33, 34, 35, 36 тех-доки.
 """
 
 from datetime import date, datetime
@@ -157,12 +157,19 @@ class DecisionRequest(BaseModel):
 
 
 class DecisionResponse(BaseModel):
-    """Результат решения работодателя."""
+    """Результат решения работодателя.
+
+    `status` — статус отклика после всей операции. У приглашения это
+    `mutual_interest`, а не `invited`: приглашение сразу создаёт взаимный
+    интерес (раздел 36), и `match_id` заполняется тем же запросом. У отказа
+    `match_id` остаётся `null`.
+    """
 
     application_id: int
     status: ApplicationStatus
     action: DecisionAction
     reject_reason: RejectReason | None
+    match_id: int | None
     decided_at: datetime
 
 

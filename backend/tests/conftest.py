@@ -9,9 +9,13 @@
 
 DSN берётся из TEST_DATABASE_URL, если он задан: DATABASE_URL указывает на хост
 `postgres` из сети Docker, и с машины разработчика это имя не резолвится.
+
+Бот MAX в тестах выключен, а транспорт уведомлений подменён: тесты не должны
+ходить в MAX Bot API и уж тем более слать сообщения живым людям.
 """
 
 import asyncio
+import os
 from contextlib import suppress
 from pathlib import Path
 from typing import AsyncIterator, Iterator
@@ -23,11 +27,20 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from tortoise import Tortoise
 
+from tests.fakes import RecordingTransport
+
+# Переменные окружения важнее .env разработчика, поэтому конфигурация теста
+# фиксируется до первого импорта приложения.
+os.environ["BOT_ENABLED"] = "false"
+os.environ.setdefault("MAX_WEBHOOK_SECRET", "test-webhook-secret")
+
 from app.applications import router as applications_router
 from app.auth import router as auth_router
 from app.core.config import settings
 from app.core.database import TORTOISE_ORM
+from app.interviews import router as interviews_router
 from app.main import app, lifespan
+from app.notifications.service import notification_service
 from tests.factories import TEST_BOT_TOKEN
 
 _DEV_DSN: str = settings.test_database_url or TORTOISE_ORM["connections"]["default"]
@@ -104,7 +117,21 @@ async def _reset_auth_rate_limit() -> AsyncIterator[None]:
     """
     await auth_router.auth_rate_limiter.reset()
     await applications_router.apply_rate_limiter.reset()
+    await interviews_router.book_rate_limiter.reset()
     yield
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def notifications() -> AsyncIterator[RecordingTransport]:
+    """Транспорт уведомлений на время теста.
+
+    Autouse: ни один тест не должен случайно отправить сообщение в MAX.
+    Тесты уведомлений берут эту же фикстуру, чтобы проверить отправленное.
+    """
+    transport = RecordingTransport()
+    notification_service.set_transport(transport)
+    yield transport
+    notification_service.set_transport(None)
 
 
 @pytest.fixture(scope="session", autouse=True)

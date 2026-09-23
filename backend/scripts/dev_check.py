@@ -1,8 +1,12 @@
-"""Ручная проверка этапов 0-3 на поднятом приложении.
+"""Ручная проверка маршрута P0 на поднятом приложении.
 
 Скрипт собирает initData тем же алгоритмом, что и клиент MAX, подписывает её
-токеном из окружения и прогоняет основной маршрут авторизации. Тестового
-пользователя после прогона удаляет.
+токеном из окружения и проходит весь обязательный маршрут: авторизация,
+роли, профиль, вакансия, лента, отклик, отбор, решение, слоты и
+бронирование. Проверочные данные после прогона удаляет.
+
+В отличие от pytest, скрипт работает на настоящем развёрнутом приложении:
+здесь видно, доходят ли уведомления до MAX.
 
 Запуск:
     docker compose exec backend python scripts/dev_check.py
@@ -18,7 +22,7 @@ import asyncio
 import hmac
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from urllib.parse import quote
 
@@ -90,52 +94,99 @@ def build_init_data(
     return f"{encoded}&hash={signature}"
 
 
-async def seed_vacancies() -> None:
-    """Готовит вакансии для ленты напрямую в БД.
+async def create_vacancies(client: httpx.AsyncClient, jar: dict) -> dict[str, int]:
+    """Создаёт вакансии через API работодателя (разделы 28, 29).
 
-    Вакансии заводятся SQL-ом, потому что эндпоинтов их создания ещё нет:
-    это зона другого разработчика. Профиль кандидата, наоборот, создаётся
-    через API — он реализован (этап 2).
+    Одна подходит кандидату по городу, другая нет: первая должна попасть в
+    ленту, вторая — быть отсеяна обязательным критерием.
     """
+    created: dict[str, int] = {}
+    for title, city in zip(PROBE_VACANCY_TITLES, ("Москва", "Казань")):
+        response = await client.post(
+            "/api/vacancies",
+            json={
+                "title": title,
+                "location": city,
+                "salary_min": "60000",
+                "salary_max": "90000",
+                "schedule": "full_time",
+                "status": "published",
+                "criteria": [
+                    {"type": "location", "required": True, "value": {"city": city}}
+                ],
+                "questions": [
+                    {
+                        "question": "Есть ли действующая медкнижка?",
+                        "type": "boolean",
+                        "required": True,
+                        "validation_rules": {"must_equal": True},
+                    }
+                ],
+            },
+            cookies=jar,
+        )
+        check(
+            f"вакансия «{title}» создана и опубликована",
+            response.status_code == 201,
+            response.text if response.status_code != 201 else "",
+        )
+        if response.status_code == 201:
+            body = response.json()
+            created[title] = body["id"]
+            check(
+                "публичная ссылка выдана при публикации",
+                bool(body["public_url"]),
+                str(body.get("public_url")),
+            )
+    return created
+
+
+async def notification_rows() -> list[dict]:
+    """Журнал уведомлений по проверочным пользователям (раздел 48)."""
     connection = await asyncpg.connect(settings.database_url)
     try:
-        for title, city in zip(PROBE_VACANCY_TITLES, ("Москва", "Казань")):
-            vacancy_id = await connection.fetchval(
-                """
-                INSERT INTO vacancies
-                    (employer_id, title, location, salary_max, schedule, status,
-                     created_at, updated_at)
-                VALUES ($1, $2, $3, 90000, 'full_time', 'published', NOW(), NOW())
-                RETURNING id
-                """,
-                PROBE_USER_ID,
-                title,
-                city,
-            )
-            await connection.execute(
-                """
-                INSERT INTO vacancy_criteria (vacancy_id, type, required, value, created_at)
-                VALUES ($1, 'location', TRUE, $2::jsonb, NOW())
-                """,
-                vacancy_id,
-                json.dumps({"city": city}),
-            )
+        rows = await connection.fetch(
+            """
+            SELECT event_type, status, attempts
+            FROM notification_logs
+            WHERE user_id = ANY($1::bigint[])
+            ORDER BY id
+            """,
+            [PROBE_USER_ID, PROBE_CANDIDATE_ID],
+        )
     finally:
         await connection.close()
+    return [dict(row) for row in rows]
 
 
 async def cleanup() -> None:
     """Убирает проверочные данные из базы разработки."""
+    users = [PROBE_USER_ID, PROBE_CANDIDATE_ID]
     connection = await asyncpg.connect(settings.database_url)
     try:
+        # Собеседования удаляются первыми: interviews.slot_id защищён RESTRICT,
+        # и каскад от вакансии к слоту без этого не пройдёт
         await connection.execute(
-            "DELETE FROM vacancies WHERE employer_id = ANY($1::bigint[])",
-            [PROBE_USER_ID, PROBE_CANDIDATE_ID],
+            """
+            DELETE FROM interviews
+            WHERE slot_id IN (
+                SELECT id FROM interview_slots WHERE employer_id = ANY($1::bigint[])
+            )
+            """,
+            users,
         )
-        for table in ("sessions", "analytics_events", "candidate_profiles", "users"):
+        await connection.execute(
+            "DELETE FROM vacancies WHERE employer_id = ANY($1::bigint[])", users
+        )
+        for table in (
+            "notification_logs",
+            "sessions",
+            "analytics_events",
+            "candidate_profiles",
+            "users",
+        ):
             await connection.execute(
-                f"DELETE FROM {table} WHERE user_id = ANY($1::bigint[])",
-                [PROBE_USER_ID, PROBE_CANDIDATE_ID],
+                f"DELETE FROM {table} WHERE user_id = ANY($1::bigint[])", users
             )
     finally:
         await connection.close()
@@ -377,7 +428,36 @@ async def run() -> None:
         )
 
         print("\nЛента вакансий с профилем (раздел 30)")
-        await seed_vacancies()
+        incomplete = await client.post(
+            "/api/vacancies",
+            json={"title": "Без обязательных данных", "status": "published"},
+            cookies=jar,
+        )
+        check(
+            "публикация без обязательных данных отклонена 422",
+            incomplete.status_code == 422,
+            incomplete.json()["error"]["code"] if incomplete.status_code == 422 else "",
+        )
+
+        typo = await client.post(
+            "/api/vacancies",
+            json={
+                "title": "С опечаткой в условии",
+                "criteria": [
+                    {"type": "location", "required": True, "value": {"cityy": "Москва"}}
+                ],
+            },
+            cookies=jar,
+        )
+        check(
+            "нечитаемое условие вакансии отклонено 422",
+            typo.status_code == 422,
+            typo.json()["error"]["code"] if typo.status_code == 422 else "",
+        )
+
+        vacancies = await create_vacancies(client, jar)
+        vacancy_id = vacancies.get(PROBE_VACANCY_TITLES[0])
+
         feed = await client.get("/api/vacancies/feed", cookies=candidate_jar)
         titles = [item["title"] for item in feed.json()["items"]]
         check(
@@ -409,6 +489,216 @@ async def run() -> None:
             "/api/vacancies/feed", params={"limit": 500}, cookies=candidate_jar
         )
         check("некорректная пагинация отклонена 422", bad_paging.status_code == 422)
+
+        if vacancy_id is None:
+            print("\nВакансия не создана — дальше проверять нечего")
+            return
+
+        await check_hiring_route(client, jar, candidate_jar, vacancy_id)
+
+
+async def check_hiring_route(
+    client: httpx.AsyncClient,
+    jar: dict,
+    candidate_jar: dict,
+    vacancy_id: int,
+) -> None:
+    """Отклик, отбор, решение, слоты и бронирование (разделы 32-37, 46)."""
+    print("\nОтклик и первичный отбор (разделы 32, 33)")
+    applied = await client.post(
+        f"/api/vacancies/{vacancy_id}/apply", cookies=candidate_jar
+    )
+    check(
+        "отклик создан",
+        applied.status_code == 201,
+        applied.text if applied.status_code != 201 else "",
+    )
+    if applied.status_code != 201:
+        return
+    application_id = applied.json()["id"]
+
+    repeated = await client.post(
+        f"/api/vacancies/{vacancy_id}/apply", cookies=candidate_jar
+    )
+    check(
+        "повторный отклик не дублируется",
+        repeated.status_code == 200 and repeated.json()["id"] == application_id,
+        f"код {repeated.status_code}",
+    )
+
+    screening = await client.get(
+        f"/api/applications/{application_id}/screening", cookies=candidate_jar
+    )
+    check("вопросы отбора получены", screening.status_code == 200)
+    question = screening.json()["questions"][0]
+    check(
+        "отсекающее условие кандидату не показано",
+        "must_equal" not in question["rules"],
+        str(question["rules"]),
+    )
+
+    passed = await client.post(
+        f"/api/applications/{application_id}/screening",
+        json={"answers": [{"question_id": question["id"], "value": True}]},
+        cookies=candidate_jar,
+    )
+    check(
+        "первичный отбор пройден",
+        passed.status_code == 200 and passed.json()["status"] == "passed",
+        passed.text if passed.status_code != 200 else passed.json()["status"],
+    )
+
+    print("\nКарточка кандидата и решение (разделы 34-36)")
+    candidates = await client.get(
+        f"/api/employer/vacancies/{vacancy_id}/candidates", cookies=jar
+    )
+    check(
+        "кандидат виден работодателю",
+        candidates.status_code == 200 and candidates.json()["total"] == 1,
+        candidates.text if candidates.status_code != 200 else "",
+    )
+    card = candidates.json()["items"][0]
+    check(
+        "в карточке нет персональных данных",
+        "Алексей" not in str(card) and "avatar" not in str(card),
+    )
+
+    decision = await client.post(
+        f"/api/applications/{application_id}/decision",
+        json={"action": "invited"},
+        cookies=jar,
+    )
+    check(
+        "приглашение переводит отклик во взаимный интерес",
+        decision.status_code == 200
+        and decision.json()["status"] == "mutual_interest",
+        decision.text if decision.status_code != 200 else "",
+    )
+    match_id = decision.json().get("match_id")
+    check("match создан", bool(match_id))
+
+    repeated_decision = await client.post(
+        f"/api/applications/{application_id}/decision",
+        json={"action": "rejected"},
+        cookies=jar,
+    )
+    check(
+        "повторное решение отклонено 409",
+        repeated_decision.status_code == 409,
+        repeated_decision.json()["error"]["code"]
+        if repeated_decision.status_code == 409
+        else "",
+    )
+
+    print("\nСлоты и бронирование (разделы 37, 56, 57)")
+    starts_at = datetime.now(timezone.utc) + timedelta(days=1)
+    slot = await client.post(
+        f"/api/vacancies/{vacancy_id}/slots",
+        json={
+            "starts_at": starts_at.isoformat(),
+            "ends_at": (starts_at + timedelta(hours=1)).isoformat(),
+        },
+        cookies=jar,
+    )
+    check(
+        "слот создан",
+        slot.status_code == 201,
+        slot.text if slot.status_code != 201 else "",
+    )
+    if slot.status_code != 201:
+        return
+    slot_id = slot.json()["id"]
+
+    naive = await client.post(
+        f"/api/vacancies/{vacancy_id}/slots",
+        json={
+            "starts_at": starts_at.replace(tzinfo=None).isoformat(),
+            "ends_at": (starts_at + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
+        },
+        cookies=jar,
+    )
+    check("время без часового пояса отклонено 422", naive.status_code == 422)
+
+    overlapping = await client.post(
+        f"/api/vacancies/{vacancy_id}/slots",
+        json={
+            "starts_at": (starts_at + timedelta(minutes=30)).isoformat(),
+            "ends_at": (starts_at + timedelta(minutes=90)).isoformat(),
+        },
+        cookies=jar,
+    )
+    check(
+        "пересекающийся слот отклонён 409",
+        overlapping.status_code == 409,
+        overlapping.json()["error"]["code"] if overlapping.status_code == 409 else "",
+    )
+
+    slots = await client.get(
+        f"/api/vacancies/{vacancy_id}/slots", cookies=candidate_jar
+    )
+    check(
+        "кандидат видит свободный слот",
+        slots.status_code == 200
+        and [item["id"] for item in slots.json()["items"]] == [slot_id],
+        slots.text if slots.status_code != 200 else "",
+    )
+    check("кандидату отдан match для бронирования", slots.json()["match_id"] == match_id)
+
+    booked = await client.post(
+        f"/api/matches/{match_id}/book",
+        json={"slot_id": slot_id},
+        cookies=candidate_jar,
+    )
+    check(
+        "собеседование назначено",
+        booked.status_code == 201
+        and booked.json()["application_status"] == "interview_scheduled",
+        booked.text if booked.status_code != 201 else "",
+    )
+
+    again = await client.post(
+        f"/api/matches/{match_id}/book",
+        json={"slot_id": slot_id},
+        cookies=candidate_jar,
+    )
+    check(
+        "повторное бронирование не дублирует собеседование",
+        again.status_code == 200 and again.json()["id"] == booked.json()["id"],
+        f"код {again.status_code}",
+    )
+
+    after = await client.get(f"/api/vacancies/{vacancy_id}/slots", cookies=jar)
+    check(
+        "работодатель видит назначенное собеседование",
+        after.status_code == 200
+        and after.json()["interviews"]
+        and after.json()["interviews"][0]["application_id"] == application_id,
+        after.text if after.status_code != 200 else "",
+    )
+
+    print("\nУведомления (разделы 46, 48)")
+    rows = await notification_rows()
+    sent_types = {row["event_type"] for row in rows}
+    expected = {
+        "application_created",
+        "candidate_invited",
+        "mutual_interest",
+        "interview_slot_available",
+        "interview_booked",
+    }
+    check(
+        "по каждому событию P0 заведено уведомление",
+        expected <= sent_types,
+        f"не хватает: {sorted(expected - sent_types)}" if expected - sent_types else "",
+    )
+    delivered = [row for row in rows if row["status"] == "sent"]
+    check(
+        "уведомления доставлены в MAX",
+        len(delivered) == len(rows),
+        "статусы: "
+        + ", ".join(f"{row['event_type']}={row['status']}" for row in rows)
+        + " (при BOT_ENABLED=false это ожидаемо)",
+    )
 
 
 async def main() -> int:
