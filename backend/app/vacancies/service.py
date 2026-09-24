@@ -171,6 +171,55 @@ async def _visible_vacancy(user: User, vacancy_id: int) -> Vacancy:
     return vacancy
 
 
+async def get_vacancy_by_public_token(user: User, token: str) -> VacancyRead:
+    """Вакансия по публичной ссылке (раздел 15): тот же вид, что кандидат
+    получает по `GET /vacancies/{id}`. Роль смотрящего не важна — ссылку
+    могут переслать кому угодно внутри MAX; важно только то же условие
+    видимости, что и у обычной карточки: вакансия опубликована, либо
+    смотрящий на неё уже откликался.
+    """
+    vacancy = await Vacancy.get_or_none(public_token=token)
+    if vacancy is None:
+        raise NotFoundError("Вакансия не найдена", code="vacancy_not_found")
+    if vacancy.status is not VacancyStatus.PUBLISHED:
+        applied = await Application.filter(
+            vacancy_id=vacancy.id, candidate_id=user.user_id
+        ).exists()
+        if not applied:
+            raise NotFoundError("Вакансия не найдена", code="vacancy_not_found")
+    return await _read(vacancy, owner=False, refresh_image=True)
+
+
+async def delete_vacancy(user: User, vacancy_id: int) -> None:
+    """Удаляет черновик вакансии.
+
+    Только черновик: по опубликованной или закрытой вакансии уже могли
+    прийти отклики, и удаление стёрло бы их историю (раздел 83 — исторические
+    данные отклика не удаляются). Чтобы перестать набирать, вакансия
+    закрывается через `PATCH`, а не удаляется.
+    """
+    vacancy = await get_own_vacancy(user, vacancy_id)
+    if vacancy.status is not VacancyStatus.DRAFT:
+        raise ConflictError(
+            "Удалить можно только черновик вакансии",
+            code="vacancy_not_draft",
+            details={"status": vacancy.status.value},
+        )
+    await vacancy.delete()
+    logger.info("Черновик вакансии %s удалён работодателем %s", vacancy_id, user.user_id)
+
+
+async def read_vacancy_for_candidate(vacancy: Vacancy) -> VacancyRead:
+    """Вакансия в кандидатском виде — без владельческих полей.
+
+    Для мест, где видимость вакансии уже проверена по другому правилу
+    (например, по факту существующего отклика — см.
+    `app.applications.service.get_application`), а не по обычному пути
+    `GET /vacancies/{id}`.
+    """
+    return await _read(vacancy, owner=False, refresh_image=True)
+
+
 async def list_own_vacancies(
     user: User, *, limit: int, offset: int
 ) -> VacancyListResponse:

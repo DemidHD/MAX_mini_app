@@ -57,8 +57,9 @@ export function updateVacancy(id: number, payload: UpdateVacancyRequest, signal?
 }
 
 /**
- * `DELETE /api/vacancies/{id}` — только черновик; опубликованные закрываются.
- * На backend эндпоинта ещё нет (сейчас 405): диалог удаления честно покажет ошибку.
+ * `DELETE /api/vacancies/{id}` → `204`. Удалить можно только черновик:
+ * опубликованная или закрытая вакансия — `409 vacancy_not_draft`
+ * (её закрывают через `PATCH`, чтобы не стереть историю откликов).
  */
 export function deleteVacancy(id: number, signal?: AbortSignal): Promise<void> {
   return api.delete<void>(`/vacancies/${id}`, signal)
@@ -67,4 +68,14 @@ export function deleteVacancy(id: number, signal?: AbortSignal): Promise<void> {
 /** Backend отказал в новом черновике из-за лимита: `409 draft_limit_reached`, `details.limit`. */
 export function isDraftLimitError(cause: unknown): boolean {
   return cause instanceof ApiError && cause.code === 'draft_limit_reached'
+}
+
+/**
+ * `GET /api/vacancies/public/{token}` — вакансия по публичной ссылке
+ * `{APP_URL}/v/{token}` (раздел 15). Ответ — кандидатский вид `VacancyRead`:
+ * владельческие поля (`public_token`, `public_url`, `applications_count`) — `null`.
+ * Неопубликованная вакансия (если зритель на неё не откликался) — `404`.
+ */
+export function getPublicVacancy(token: string, signal?: AbortSignal): Promise<Vacancy> {
+  return api.get<Vacancy>(`/vacancies/public/${encodeURIComponent(token)}`, signal)
 }

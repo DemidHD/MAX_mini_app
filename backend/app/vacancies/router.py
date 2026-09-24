@@ -30,6 +30,17 @@ async def create_vacancy(
     return await service.create_vacancy(user, payload)
 
 
+@router.get("/public/{token}", response_model=VacancyRead)
+async def get_vacancy_by_public_token(token: str, user: CurrentUser) -> VacancyRead:
+    """Вакансия по публичной ссылке `{APP_URL}/v/{token}` (раздел 15).
+
+    Два сегмента пути (`public/{token}`) не пересекаются с `{vacancy_id}`
+    выше — коллизии, из-за которой роутер ленты подключается отдельно, здесь
+    нет.
+    """
+    return await service.get_vacancy_by_public_token(user, token)
+
+
 @router.get("/{vacancy_id}", response_model=VacancyRead)
 async def get_vacancy(vacancy_id: int, user: CurrentUser) -> VacancyRead:
     """Вакансия: работодателю — своя в любом статусе, кандидату — опубликованная."""
@@ -42,6 +53,14 @@ async def update_vacancy(
 ) -> VacancyRead:
     """Меняет вакансию. Публикация и закрытие — через поле `status`."""
     return await service.update_vacancy(user, vacancy_id, payload)
+
+
+@router.delete("/{vacancy_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_vacancy(vacancy_id: int, user: EmployerUser) -> None:
+    """Удаляет черновик вакансии. Эндпоинта нет в разделе 27 тех-доки —
+    добавлен по тому же правилу, что запрещает `published → draft`: убрать
+    можно только то, по чему точно не могло быть откликов."""
+    await service.delete_vacancy(user, vacancy_id)
 
 
 @employer_router.get("/vacancies", response_model=VacancyListResponse)

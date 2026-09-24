@@ -13,6 +13,7 @@ import { StubPage } from '@/pages/StubPage'
 import { VacancyBasicsPage } from '@/pages/VacancyBasicsPage'
 import { VacancyCriteriaPage } from '@/pages/VacancyCriteriaPage'
 import { VacancyPreviewPage } from '@/pages/VacancyPreviewPage'
+import { VacancyPublicPage } from '@/pages/VacancyPublicPage'
 import { VacancyPublishedPage } from '@/pages/VacancyPublishedPage'
 import { ApplicationStatusPage } from '@/pages/candidate/ApplicationStatusPage'
 import { CandidateProfilePage } from '@/pages/candidate/CandidateProfilePage'
@@ -51,6 +52,7 @@ export const router = createBrowserRouter([
         ],
       },
       { path: routes.candidateVacancy(), element: <VacancyDetailsPage /> },
+      { path: routes.vacancyPublic(), element: <VacancyPublicPage /> },
       { path: routes.candidateApplication(), element: <ApplicationStatusPage /> },
       { path: routes.candidateScreeningStart(), element: <ScreeningStartPage /> },
       { path: routes.candidateScreening(), element: <ScreeningPage /> },

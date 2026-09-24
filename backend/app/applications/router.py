@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query, Response, status
 from app.applications import employer_service, service
 from app.applications.schemas import (
     ApplicationCreatedResponse,
+    CandidateApplicationRead,
     CandidateListResponse,
     DecisionRequest,
     DecisionResponse,
@@ -54,6 +55,14 @@ async def apply(
         status=application.status,
         created_at=application.created_at,
     )
+
+
+@router.get("/{application_id}", response_model=CandidateApplicationRead)
+async def get_application(
+    application_id: int, user: CandidateUser
+) -> CandidateApplicationRead:
+    """Статус отклика кандидата — переживает перезагрузку экрана (C06/C07)."""
+    return await service.get_application(user, application_id)
 
 
 @router.get("/{application_id}/screening", response_model=ScreeningStateResponse)
