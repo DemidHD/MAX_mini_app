@@ -73,6 +73,7 @@ async def get_feed(user: User, *, limit: int, offset: int) -> FeedResponse:
                         salary_min=vacancy.salary_min,
                         salary_max=vacancy.salary_max,
                         schedule=vacancy.schedule,
+                        image_url=vacancy.image_url,
                         criteria=[
                             FeedCriterion(
                                 type=criterion.type,

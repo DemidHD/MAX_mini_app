@@ -33,6 +33,8 @@ MAX_CRITERIA = 20
 MAX_QUESTIONS = 6
 
 MAX_QUESTION_LENGTH = 1000
+MAX_COMPANY_NAME_LENGTH = 255
+MAX_DESCRIPTION_LENGTH = 4000
 
 # NUMERIC(5, 2) у `vacancy_criteria.weight`
 WEIGHT_MAX_DIGITS = 5
@@ -119,6 +121,8 @@ class VacancyCreateRequest(BaseModel):
     """
 
     title: str = Field(min_length=1, max_length=255)
+    company_name: str | None = Field(default=None, max_length=MAX_COMPANY_NAME_LENGTH)
+    description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
     location: str | None = Field(default=None, max_length=255)
     salary_min: Decimal | None = Field(
         default=None, ge=0, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES
@@ -141,7 +145,7 @@ class VacancyCreateRequest(BaseModel):
             raise ValueError("Название вакансии не может быть пустым")
         return cleaned
 
-    @field_validator("location", "schedule")
+    @field_validator("location", "schedule", "company_name", "description")
     @classmethod
     def _strip_or_clear(cls, value: str | None) -> str | None:
         if value is None:
@@ -178,6 +182,8 @@ class VacancyUpdateRequest(BaseModel):
     """
 
     title: str | None = Field(default=None, min_length=1, max_length=255)
+    company_name: str | None = Field(default=None, max_length=MAX_COMPANY_NAME_LENGTH)
+    description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
     location: str | None = Field(default=None, max_length=255)
     salary_min: Decimal | None = Field(
         default=None, ge=0, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES
@@ -203,7 +209,7 @@ class VacancyUpdateRequest(BaseModel):
             raise ValueError("Название вакансии не может быть пустым")
         return cleaned
 
-    @field_validator("location", "schedule")
+    @field_validator("location", "schedule", "company_name", "description")
     @classmethod
     def _strip_or_clear(cls, value: str | None) -> str | None:
         if value is None:
@@ -234,10 +240,13 @@ class VacancyRead(BaseModel):
     id: int
     employer_id: int
     title: str
+    company_name: str | None
+    description: str | None
     location: str | None
     salary_min: Money | None
     salary_max: Money | None
     schedule: str | None
+    image_url: str | None
     status: VacancyStatus
     public_token: str | None
     public_url: str | None

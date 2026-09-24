@@ -15,6 +15,7 @@ from decimal import Decimal
 from itertools import count
 from typing import Any
 
+import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 
@@ -205,6 +206,75 @@ async def test_vacancy_creation_guards_and_happy_path(client: AsyncClient) -> No
     assert empty_title.status_code == 422
     assert inverted_salary.status_code == 422
     assert closed_on_create.status_code == 422
+
+
+# --- Название заведения и описание (не из тех-доки, доп. поля вакансии) ------
+
+
+async def test_vacancy_company_name_and_description(client: AsyncClient) -> None:
+    await _employer(client)
+
+    # 1. Сохраняются при создании, необязательны для публикации
+    created = await _created_vacancy(
+        client,
+        company_name="Кофейня «Утро»",
+        description="Ищем бариста в дружную команду.",
+        status="published",
+    )
+    assert created["status"] == VacancyStatus.PUBLISHED.value
+    assert created["company_name"] == "Кофейня «Утро»"
+    assert created["description"] == "Ищем бариста в дружную команду."
+
+    # 2. Без них вакансия по-прежнему публикуется (раздел 29 их не требует)
+    without = await _created_vacancy(client, status="published")
+    assert without["status"] == VacancyStatus.PUBLISHED.value
+    assert without["company_name"] is None
+    assert without["description"] is None
+
+    # 3. Обновляются независимо от остальных полей
+    updated = await _update(client, created["id"], company_name="Кофейня «Утро-2»")
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert body["company_name"] == "Кофейня «Утро-2»"
+    assert body["description"] == "Ищем бариста в дружную команду."
+
+    # 4. Пустая строка очищает поле, как location/schedule
+    cleared = await _update(client, created["id"], description="   ")
+    assert cleared.json()["description"] is None
+
+
+# --- Лимит черновиков (не из тех-доки, продуктовое ограничение) --------------
+
+
+async def test_vacancy_draft_limit(client: AsyncClient) -> None:
+    await _employer(client)
+
+    created_ids = []
+    for _ in range(settings.vacancy_draft_limit):
+        response = await _create(client, **FULL_VACANCY)
+        assert response.status_code == 201, response.text
+        created_ids.append(response.json()["id"])
+
+    over_limit = await _create(client, **FULL_VACANCY)
+    assert over_limit.status_code == 409
+    assert over_limit.json()["error"]["code"] == "draft_limit_reached"
+    assert over_limit.json()["error"]["details"] == {
+        "limit": settings.vacancy_draft_limit
+    }
+
+    # Публикация одного черновика освобождает место для нового
+    freed = await _update(client, created_ids[0], status="published")
+    assert freed.status_code == 200, freed.text
+
+    assert (await _create(client, **FULL_VACANCY)).status_code == 201
+    # Лимит по-прежнему в силе для следующего черновика
+    assert (await _create(client, **FULL_VACANCY)).status_code == 409
+
+    # Публикация сразу при создании не расходует лимит черновиков
+    for _ in range(3):
+        assert (
+            await _create(client, **FULL_VACANCY, status="published")
+        ).status_code == 201
 
 
 # --- Валидация условий и вопросов --------------------------------------------
@@ -407,7 +477,12 @@ async def test_vacancy_read_visibility(client: AsyncClient) -> None:
 # --- Изменение и публикация ---------------------------------------------------
 
 
-async def test_vacancy_update_lifecycle(client: AsyncClient) -> None:
+async def test_vacancy_update_lifecycle(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Тест создаёт больше черновиков подряд, чем допускает продуктовый лимит
+    # (не связанный с тем, что здесь проверяется) — раздвигаем его на время теста
+    monkeypatch.setattr(settings, "vacancy_draft_limit", 100)
     employer = await _employer(client)
 
     # 1. Переданные поля меняются, остальные — нет

@@ -140,7 +140,7 @@ def _check_available_from(
 
 
 def _check_experience(value: dict[str, Any], profile: CandidateProfile) -> bool | None:
-    minimum = _to_months(value.get("min_months"))
+    minimum = months_from_criterion_value(value.get("min_months"))
     if minimum is None or profile.experience_months is None:
         return None
     return profile.experience_months >= minimum
@@ -176,8 +176,12 @@ def _to_decimal(value: Any) -> Decimal | None:
     return number
 
 
-def _to_months(value: Any) -> int | None:
-    """Число месяцев из критерия.
+def months_from_criterion_value(value: Any) -> int | None:
+    """Число месяцев из критерия `experience` (например, `min_months`).
+
+    Публичная точка входа: используется и здесь, и в explainability/ranking
+    (раздел 64, 65) для того же поля `required` — раз число месяцев одно,
+    парсить его должно одно место.
 
     `True` — не «один месяц»: булево значение в этом поле означает, что
     критерий заполнен неверно. Число в виде строки или с нулевой дробной

@@ -15,6 +15,8 @@ dependencies = [
     # В Windows нет системной базы часовых поясов, а Tortoise с use_tz=True
     # просит у zoneinfo зону UTC. В Linux-образе она есть в самой системе.
     "tzdata>=2024.1; sys_platform == 'win32'",
+    "yandex-ai-studio-sdk>=0.22.1",
+    "gigachat>=0.2.3",
 ]
 
 [dependency-groups]

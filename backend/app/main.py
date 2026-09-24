@@ -11,6 +11,8 @@ from typing import AsyncIterator
 from fastapi import APIRouter, FastAPI
 from tortoise.contrib.fastapi import RegisterTortoise
 
+from app.ai.router import router as ai_router
+from app.ai.service import configure_ai_service
 from app.applications.router import employer_router, vacancies_router
 from app.applications.router import router as applications_router
 from app.auth.router import router as auth_router
@@ -34,6 +36,7 @@ logger = logging.getLogger("app.main")
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     setup_logging()
+    configure_ai_service()
     settings.storage_root.mkdir(parents=True, exist_ok=True)
     settings.avatars_dir.mkdir(parents=True, exist_ok=True)
     settings.resumes_dir.mkdir(parents=True, exist_ok=True)
@@ -96,6 +99,7 @@ api_router.include_router(applications_router)
 api_router.include_router(employer_router)
 api_router.include_router(employer_vacancies_router)
 api_router.include_router(matches_router)
+api_router.include_router(ai_router)
 app.include_router(api_router)
 
 

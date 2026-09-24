@@ -37,12 +37,27 @@ ALLOWED_TRANSITIONS: dict[ApplicationStatus, frozenset[ApplicationStatus]] = {
     ApplicationStatus.SCREENING: frozenset(
         {ApplicationStatus.PASSED, ApplicationStatus.HARD_FILTER_FAILED}
     ),
-    # Этап 5 — решение работодателя. `reserved` — P1 (раздел 20)
+    # Этап 5 — решение работодателя. `reserved` — функция «Резерв» (P1, раздел 20):
+    # промежуточное решение, а не финальное, поэтому из него ещё можно
+    # пригласить или отклонить (см. переход ниже).
     ApplicationStatus.PASSED: frozenset(
-        {ApplicationStatus.INVITED, ApplicationStatus.REJECTED}
+        {
+            ApplicationStatus.INVITED,
+            ApplicationStatus.REJECTED,
+            ApplicationStatus.RESERVED,
+        }
     ),
-    # P1 — заполняется вместе с доской статусов и резервом
+    # P1 — доска статусов (раздел 62) ведёт решение и отсюда тем же набором
     ApplicationStatus.UNDER_REVIEW: frozenset(
+        {
+            ApplicationStatus.INVITED,
+            ApplicationStatus.REJECTED,
+            ApplicationStatus.RESERVED,
+        }
+    ),
+    # Раздел 62 не рисует возврат из резерва на доску — решение принимается
+    # прямо отсюда тем же эндпоинтом `POST /applications/:id/decision`.
+    ApplicationStatus.RESERVED: frozenset(
         {ApplicationStatus.INVITED, ApplicationStatus.REJECTED}
     ),
     # Этап 6 — взаимный интерес и интервью. Подтверждения от кандидата нет:

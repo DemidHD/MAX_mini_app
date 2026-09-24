@@ -27,6 +27,11 @@ class FeedVacancy(BaseModel):
     salary_min: Money | None
     salary_max: Money | None
     schedule: str | None
+    # Показывается как есть, без проверки живой ли ссылки (не из тех-доки):
+    # синхронная проверка на каждую карточку в ленте была бы N внешних
+    # запросов за один показ ленты. Проверка и переподбор — только при
+    # открытии конкретной вакансии, `GET /vacancies/{id}`.
+    image_url: str | None
     criteria: list[FeedCriterion]
 
 

@@ -111,6 +111,29 @@ class CardScreeningAnswer(BaseModel):
     value: AnswerValue
 
 
+class ExperienceExplanation(BaseModel):
+    """Опыт кандидата рядом с требованием вакансии. Раздел 64 тех-доки.
+
+    `None` — в вакансии нет критерия `experience` и нечего сравнивать.
+    """
+
+    candidate: int | None
+    required: int | None
+
+
+class MatchExplanation(BaseModel):
+    """Структурированное объяснение подбора. Раздел 64 тех-доки.
+
+    `matched` — типы критериев (обязательных и желательных), которым
+    кандидат соответствует; опыт в список не входит — он выделен отдельно
+    парой чисел. Раздел 31: субъективные признаки сюда попасть не могут —
+    их нет ни в одном источнике данных.
+    """
+
+    matched: list[CriterionType]
+    experience: ExperienceExplanation | None
+
+
 class CandidateCard(BaseModel):
     """Стандартизированная карточка кандидата. Раздел 34 тех-доки.
 
@@ -133,6 +156,9 @@ class CandidateCard(BaseModel):
     available_from: date | None
     screening_answers: list[CardScreeningAnswer]
     hard_filters: list[CardCriterionResult]
+    # Раздел 65: порядок карточек в списке уже отсортирован ранжированием,
+    # но сам score наружу не отдаётся — только объяснение (раздел 64)
+    explanation: MatchExplanation
 
 
 class CandidateListResponse(BaseModel):

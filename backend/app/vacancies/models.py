@@ -16,7 +16,17 @@ class Vacancy(Model):
         on_delete=fields.CASCADE,
     )
     title = fields.CharField(max_length=255)
+    # Не из тех-доки (раздел 15 их не перечисляет) — добавлены по прямому
+    # запросу продукта. Необязательны и не входят в проверку публикации
+    # (раздел 29 фиксирует ровно 4 обязательных поля закрытым списком).
+    company_name = fields.CharField(max_length=255, null=True)
+    description = fields.TextField(null=True)
     location = fields.CharField(max_length=255, null=True)
+    # Ссылка на фото по теме вакансии (не из тех-доки) — не сам файл: раздел 3
+    # запрещает хранить бинарники в БД, и внешний файл здесь тем более незачем
+    # тянуть на свой диск. Проверяется и при необходимости переподбирается при
+    # каждом открытии карточки (`app.vacancies.images`).
+    image_url = fields.TextField(null=True)
     salary_min = fields.DecimalField(max_digits=12, decimal_places=2, null=True)
     salary_max = fields.DecimalField(max_digits=12, decimal_places=2, null=True)
     schedule = fields.CharField(max_length=100, null=True)
