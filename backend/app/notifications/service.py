@@ -89,6 +89,19 @@ class NotificationService:
             ),
         )
 
+    async def application_reserved(
+        self, *, candidate_id: int, application_id: int, vacancy_title: str
+    ) -> None:
+        """Кандидату: работодатель сохранил отклик в резерве (P1, раздел 46)."""
+        await self._deliver(
+            NotificationType.APPLICATION_RESERVED,
+            user_id=candidate_id,
+            entity_id=application_id,
+            text=messages.application_reserved(
+                vacancy_title=vacancy_title, application_id=application_id
+            ),
+        )
+
     async def mutual_interest(
         self,
         *,

@@ -57,6 +57,23 @@ class Settings(BaseSettings):
     book_rate_limit_requests: int = 30
     book_rate_limit_window_seconds: int = 60
 
+    # --- Вакансии ---
+    # Ограничение не из тех-доки — продуктовое решение против засорения
+    # кабинета брошенными черновиками. Считаются только `status = draft`;
+    # публикация освобождает место.
+    vacancy_draft_limit: int = 5
+
+    # --- Фото вакансии (не из тех-доки) ---
+    # Openverse — открытый каталог Creative Commons изображений, поиск
+    # без API-ключа (docs.openverse.org). Тема — `vacancy.title`.
+    vacancy_image_search_enabled: bool = True
+    openverse_api_url: str = "https://api.openverse.org/v1/images/"
+    vacancy_image_candidate_count: int = 20
+    vacancy_image_search_timeout_seconds: float = 5.0
+    # Проверка "жива ли ссылка" выполняется синхронно при каждом открытии
+    # карточки вакансии — короткий таймаут, чтобы битый хостинг не подвешивал запрос
+    vacancy_image_liveness_timeout_seconds: float = 3.0
+
     # --- Интервью ---
     # Границы длительности слота тех-дока не задаёт (раздел 22 описывает
     # только начало и конец). Ограничения нужны, чтобы работодатель не завёл
@@ -86,16 +103,72 @@ class Settings(BaseSettings):
         "image/webp",
     ]
 
-    # --- AI (P1) ---
+    # --- AI (P1, раздел 58) ---
+    # Общие переменные раздела 71 тех-доки — историческая заглушка под один
+    # провайдер. Реальная интеграция сделана двумя провайдерами ниже, чтобы
+    # отказ или перегрузка одного не переключали сценарий на ручной ввод
+    # (раздел 57), пока жив другой.
     ai_api_url: str = ""
     ai_api_key: str = ""
+    ai_request_timeout_seconds: float = 15.0
+    # Порядок провайдеров текстовой генерации (`parse-vacancy`): первый
+    # доступный побеждает, остальные — резерв на случай отказа/перегрузки.
+    # Значение можно поменять без деплоя кода — только переменной окружения.
+    ai_provider_order: Annotated[list[str], NoDecode] = ["gigachat", "yandexgpt"]
 
-    @field_validator("avatar_allowed_mime_types", mode="before")
+    # GigaChat (https://developers.sber.ru/docs/ru/gigachat/api/overview)
+    gigachat_auth_key: str = ""
+    gigachat_scope: str = "GIGACHAT_API_PERS"
+    gigachat_oauth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+    gigachat_api_url: str = "https://gigachat.devices.sberbank.ru/api/v1"
+    gigachat_model: str = "GigaChat"
+    # GigaChat отдаёт сертификат, подписанный CA Минцифры, которого нет в
+    # системном хранилище доверенных сертификатов. Файл — публичный корневой
+    # сертификат (не секрет), лежит в репозитории и коммитится в git;
+    # относительный путь резолвится от backend/ через свойство ниже — работает
+    # одинаково локально, в Docker (`COPY . .` в Dockerfile) и на сервере,
+    # независимо от текущей рабочей директории процесса.
+    gigachat_ca_bundle_file: str = "certs/russian_trusted_root_ca.crt"
+    # Отключать проверку — на свой риск и только для отладки без CA-бандла.
+    gigachat_verify_ssl: bool = True
+
+    # YandexGPT и SpeechKit — через официальный `yandex-ai-studio-sdk` (gRPC),
+    # поэтому REST-адреса не нужны: эндпоинт SDK резолвит сам по `folder_id`.
+    yandex_api_key: str = ""
+    yandex_folder_id: str = ""
+    yandex_gpt_model: str = "yandexgpt"
+
+    # Yandex SpeechKit — голосовой ввод вакансии (`transcribe-vacancy`).
+    # Отдельный ключ, потому что в Yandex Cloud это часто отдельный сервисный
+    # аккаунт; если не задан, используется `yandex_api_key`.
+    yandex_speechkit_api_key: str = ""
+    yandex_speechkit_lang: str = "ru-RU"
+
+    @field_validator("avatar_allowed_mime_types", "ai_provider_order", mode="before")
     @classmethod
-    def _split_mime_types(cls, value: object) -> object:
+    def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
+
+    @property
+    def yandex_speechkit_key(self) -> str:
+        return self.yandex_speechkit_api_key or self.yandex_api_key
+
+    @property
+    def gigachat_ca_bundle_path(self) -> str:
+        """Абсолютный путь к CA-бандлу GigaChat, независимо от рабочей директории.
+
+        `httpx`/`ssl` открывают относительный путь относительно CWD процесса,
+        а она отличается между pytest, `uvicorn` из `backend/` и Docker
+        (`WORKDIR /app`). Абсолютный путь от `backend/` устраняет разницу.
+        """
+        if not self.gigachat_ca_bundle_file:
+            return ""
+        path = Path(self.gigachat_ca_bundle_file)
+        if not path.is_absolute():
+            path = _BACKEND_ROOT / path
+        return str(path)
 
     @property
     def is_production(self) -> bool:

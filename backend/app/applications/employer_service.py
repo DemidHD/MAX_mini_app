@@ -9,6 +9,7 @@
 """
 
 import logging
+from decimal import Decimal
 
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.transactions import in_transaction
@@ -27,17 +28,22 @@ from app.applications.schemas import (
     CardScreeningAnswer,
     DecisionRequest,
     DecisionResponse,
+    ExperienceExplanation,
+    MatchExplanation,
 )
 from app.applications.screening import stored_value
 from app.applications.state import ensure_transition
 from app.candidates.models import CandidateProfile
 from app.core.database import utcnow
-from app.core.enums import ApplicationStatus, DecisionAction
+from app.core.enums import ApplicationStatus, CriterionType, DecisionAction
 from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.matching.explain import explain as build_explanation
+from app.matching.ranking import CriterionOutcome, rank as rank_criteria
+from app.matching.rules import months_from_criterion_value
 from app.notifications.service import notification_service
 from app.users.models import User
 from app.vacancies import service as vacancies_service
-from app.vacancies.models import ScreeningQuestion, Vacancy
+from app.vacancies.models import ScreeningQuestion, Vacancy, VacancyCriterion
 
 logger = logging.getLogger("app.applications.employer")
 
@@ -47,6 +53,7 @@ logger = logging.getLogger("app.applications.employer")
 REVIEWABLE_STATUSES = (
     ApplicationStatus.PASSED,
     ApplicationStatus.UNDER_REVIEW,
+    ApplicationStatus.RESERVED,
     ApplicationStatus.INVITED,
     ApplicationStatus.REJECTED,
     ApplicationStatus.MUTUAL_INTEREST,
@@ -60,13 +67,21 @@ REVIEWABLE_STATUSES = (
 DECISION_TARGET = {
     DecisionAction.INVITED: ApplicationStatus.INVITED,
     DecisionAction.REJECTED: ApplicationStatus.REJECTED,
+    DecisionAction.RESERVED: ApplicationStatus.RESERVED,
+}
+
+# Аналитическое имя события по действию работодателя (раздел 60)
+_DECISION_EVENT_NAME = {
+    DecisionAction.INVITED: "candidate_invited",
+    DecisionAction.REJECTED: "candidate_rejected",
+    DecisionAction.RESERVED: "candidate_reserved",
 }
 
 
 async def list_candidates(
     user: User, vacancy_id: int, *, limit: int, offset: int
 ) -> CandidateListResponse:
-    """Кандидаты вакансии, прошедшие первичный отбор (разделы 27, 34).
+    """Кандидаты вакансии, прошедшие первичный отбор (разделы 27, 34, 65).
 
     Карточка собирается одинаково для всех кандидатов и содержит только
     рабочие факторы: ни имени, ни фото раздел 34 в ней не предусматривает.
@@ -75,31 +90,69 @@ async def list_candidates(
     а не считается заново: кандидат прошёл отбор — работодатель видит именно
     то соответствие, по которому отклик был допущен. Изменение профиля после
     отбора карточку не переписывает.
+
+    Список сортируется ранжированием (раздел 65): сначала кандидаты с большим
+    весом совпавших желательных критериев, при равенстве — как раньше, от
+    новых откликов к старым. Страница вакансии на масштабе микробизнеса
+    небольшая, поэтому сортировка и пагинация выполняются в Python по всей
+    выборке — так же, как в ленте (`app.matching.service.get_feed`), а не на
+    уровне SQL, которому нечем посчитать вес критерия.
     """
     vacancy = await _own_vacancy(user, vacancy_id)
 
-    applications_query = Application.filter(
-        vacancy_id=vacancy.id, status__in=REVIEWABLE_STATUSES
-    )
-    total = await applications_query.count()
     # `-id` вторым ключом: у откликов, созданных в одну миллисекунду, порядок
-    # иначе не определён, и страницы могли бы перекрываться
-    applications = await (
-        applications_query.order_by("-created_at", "-id").offset(offset).limit(limit)
+    # иначе не определён, и страницы могли бы перекрываться. `sorted` ниже
+    # стабильна, поэтому этот порядок остаётся тай-брейком внутри ranking.
+    applications = await Application.filter(
+        vacancy_id=vacancy.id, status__in=REVIEWABLE_STATUSES
+    ).order_by("-created_at", "-id")
+    total = len(applications)
+
+    weights, experience_required = await _criteria_context(vacancy.id)
+    ranked = sorted(
+        await _build_cards(
+            vacancy,
+            applications,
+            weights=weights,
+            experience_required=experience_required,
+        ),
+        key=lambda scored: scored[1],
+        reverse=True,
     )
 
     return CandidateListResponse(
-        items=await _build_cards(vacancy, applications),
+        items=[card for card, _score in ranked[offset : offset + limit]],
         limit=limit,
         offset=offset,
         total=total,
     )
 
 
+async def _criteria_context(
+    vacancy_id: int,
+) -> tuple[dict[CriterionType, Decimal], int | None]:
+    """Веса критериев и требуемый опыт (в месяцах) для ranking и объяснимости.
+
+    Берутся из текущих критериев вакансии, а не из снимка отбора: раздел 65
+    только сортирует список и не меняет статус кандидата, поэтому нужны
+    актуальные веса работодателя, а не те, что были на момент отбора.
+    Двух критериев одного типа контракт не запрещает — берётся первый.
+    """
+    weights: dict[CriterionType, Decimal] = {}
+    experience_required: int | None = None
+    for criterion in await VacancyCriterion.filter(vacancy_id=vacancy_id):
+        if criterion.type not in weights and criterion.weight is not None:
+            weights[criterion.type] = criterion.weight
+        if criterion.type is CriterionType.EXPERIENCE and experience_required is None:
+            value = criterion.value if isinstance(criterion.value, dict) else {}
+            experience_required = months_from_criterion_value(value.get("min_months"))
+    return weights, experience_required
+
+
 async def decide(
     user: User, application_id: int, payload: DecisionRequest
 ) -> DecisionResponse:
-    """Решение работодателя по отклику (разделы 35, 36).
+    """Решение работодателя по отклику (разделы 20, 35, 36).
 
     Раздел 56 требует выполнять решение и смену статуса одной транзакцией.
     Отклик блокируется, а переход перепроверяется под блокировкой: два
@@ -109,9 +162,12 @@ async def decide(
     `mutual_interest` — одна операция, иначе отклик мог бы остаться в
     `invited` без match, и кандидату нечего было бы бронировать.
 
-    Уведомления `candidate_invited` и `mutual_interest` (раздел 46)
-    отправляются после commit: ошибка уведомления решение не отменяет
-    (раздел 47).
+    `reserved` (функция «Резерв», P1) — тоже промежуточное решение: из него
+    работодатель может позже пригласить или отклонить тем же эндпоинтом
+    (переход описан в `state.py`).
+
+    Уведомления (раздел 46) отправляются после commit: ошибка уведомления
+    решение не отменяет (раздел 47).
     """
     action = _ensure_supported_action(payload)
     decision_status = DECISION_TARGET[action]
@@ -144,9 +200,7 @@ async def decide(
         await locked.save(using_db=connection, update_fields=["status", "updated_at"])
 
     await analytics.log_event(
-        "candidate_invited"
-        if action is DecisionAction.INVITED
-        else "candidate_rejected",
+        _DECISION_EVENT_NAME[action],
         user_id=user.user_id,
         payload={
             "application_id": application.id,
@@ -168,6 +222,8 @@ async def decide(
         )
     if match_id is not None:
         await _notify_invited(user, application, match_id)
+    elif action is DecisionAction.RESERVED:
+        await _notify_reserved(application)
     logger.info(
         "Решение работодателя: отклик=%s действие=%s статус=%s",
         application.id,
@@ -207,6 +263,20 @@ async def _notify_invited(user: User, application: Application, match_id: int) -
         application_id=application.id,
         candidate_id=application.candidate_id,
         employer_id=user.user_id,
+        vacancy_title=vacancy.title,
+    )
+
+
+async def _notify_reserved(application: Application) -> None:
+    """Уведомление кандидату о переводе в резерв (P1, раздел 46)."""
+    vacancy = await Vacancy.get_or_none(id=application.vacancy_id)
+    if vacancy is None:
+        logger.warning("Вакансия отклика %s не найдена", application.id)
+        return
+
+    await notification_service.application_reserved(
+        candidate_id=application.candidate_id,
+        application_id=application.id,
         vacancy_title=vacancy.title,
     )
 
@@ -251,13 +321,7 @@ async def _create_match(
 
 
 def _ensure_supported_action(payload: DecisionRequest) -> DecisionAction:
-    """Раздел 20: в P0 backend принимает только `rejected` и `invited`."""
-    if payload.action is DecisionAction.RESERVED:
-        raise ValidationError(
-            "Перевод в резерв относится к P1 и пока недоступен",
-            code="decision_action_not_supported",
-            details={"action": payload.action.value},
-        )
+    """Раздел 20: причина отказа осмысленна только вместе с `rejected`."""
     if payload.reject_reason is not None and payload.action is not (
         DecisionAction.REJECTED
     ):
@@ -288,9 +352,13 @@ async def _own_application(user: User, application_id: int) -> Application:
 
 
 async def _build_cards(
-    vacancy: Vacancy, applications: list[Application]
-) -> list[CandidateCard]:
-    """Собирает карточки страницы.
+    vacancy: Vacancy,
+    applications: list[Application],
+    *,
+    weights: dict[CriterionType, Decimal],
+    experience_required: int | None,
+) -> list[tuple[CandidateCard, Decimal]]:
+    """Собирает карточки страницы вместе с ключом ранжирования каждой.
 
     Число запросов не зависит от размера страницы: профили, ответы и вопросы
     читаются пакетами, критерии и вопросы общие для всей вакансии.
@@ -321,6 +389,8 @@ async def _build_cards(
             profiles.get(application.candidate_id),
             answers.get(application.id, []),
             questions,
+            weights=weights,
+            experience_required=experience_required,
         )
         for application in applications
     ]
@@ -331,8 +401,19 @@ def _build_card(
     profile: CandidateProfile | None,
     answers: list[ScreeningAnswer],
     questions: dict[int, ScreeningQuestion],
-) -> CandidateCard:
-    return CandidateCard(
+    *,
+    weights: dict[CriterionType, Decimal],
+    experience_required: int | None,
+) -> tuple[CandidateCard, Decimal]:
+    outcomes = _criteria_outcomes(application)
+    ranking = rank_criteria(outcomes, weights)
+    explanation = build_explanation(
+        outcomes,
+        experience_required_months=experience_required,
+        candidate_experience_months=profile.experience_months if profile else None,
+    )
+
+    card = CandidateCard(
         application_id=application.id,
         status=application.status,
         applied_at=application.created_at,
@@ -352,11 +433,28 @@ def _build_card(
             for answer in answers
             if answer.question_id in questions
         ],
-        hard_filters=_hard_filters(application),
+        hard_filters=[
+            CardCriterionResult(
+                type=item.type, required=item.required, passed=item.passed
+            )
+            for item in outcomes
+        ],
+        explanation=MatchExplanation(
+            matched=explanation.matched,
+            experience=(
+                ExperienceExplanation(
+                    candidate=explanation.experience.candidate,
+                    required=explanation.experience.required,
+                )
+                if explanation.experience
+                else None
+            ),
+        ),
     )
+    return card, ranking.score
 
 
-def _hard_filters(application: Application) -> list[CardCriterionResult]:
+def _criteria_outcomes(application: Application) -> list[CriterionOutcome]:
     """Снимок обязательных фильтров, сделанный на первичном отборе.
 
     Снимка нет только у отклика, не проходившего отбор в текущей версии кода;
@@ -374,8 +472,10 @@ def _hard_filters(application: Application) -> list[CardCriterionResult]:
     if not isinstance(criteria, list):
         return []
     return [
-        CardCriterionResult(
-            type=item["type"], required=item["required"], passed=item["passed"]
+        CriterionOutcome(
+            type=CriterionType(item["type"]),
+            required=item["required"],
+            passed=item["passed"],
         )
         for item in criteria
         if isinstance(item, dict)

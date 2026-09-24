@@ -41,7 +41,9 @@ class ScreeningQuestionType(StrEnum):
 class ApplicationStatus(StrEnum):
     """Раздел 17.
 
-    `reserved` относится к P1 и добавляется вместе с функцией «Резерв».
+    `reserved` — функция «Резерв» (P1, раздел 20): промежуточное состояние
+    между первичным отбором и финальным решением, из которого работодатель
+    может позже пригласить или отклонить кандидата.
     """
 
     CREATED = "created"
@@ -50,6 +52,7 @@ class ApplicationStatus(StrEnum):
     PASSED = "passed"
     UNDER_REVIEW = "under_review"
     REJECTED = "rejected"
+    RESERVED = "reserved"
     INVITED = "invited"
     MUTUAL_INTEREST = "mutual_interest"
     INTERVIEW_SCHEDULED = "interview_scheduled"
@@ -57,11 +60,7 @@ class ApplicationStatus(StrEnum):
 
 
 class DecisionAction(StrEnum):
-    """Раздел 20.
-
-    Колонка заводится сразу со всеми значениями, но в P0 backend принимает
-    только `rejected` и `invited`; `reserved` до реализации P1 отклоняется как 422.
-    """
+    """Раздел 20. `reserved` — функция «Резерв» (P1)."""
 
     REJECTED = "rejected"
     RESERVED = "reserved"
@@ -97,10 +96,10 @@ class InterviewStatus(StrEnum):
 
 
 class NotificationType(StrEnum):
-    """Раздел 46. Здесь только обязательные для P0 типы.
+    """Раздел 46.
 
-    Остальные (`application_rejected`, `interview_cancelled` и другие)
-    добавляются вместе с функциями P1–P2.
+    Остальные типы раздела 46 (`application_rejected`, `interview_cancelled`
+    и другие) относятся к P2 и пока не заводятся.
     """
 
     APPLICATION_CREATED = "application_created"
@@ -108,6 +107,8 @@ class NotificationType(StrEnum):
     MUTUAL_INTEREST = "mutual_interest"
     INTERVIEW_SLOT_AVAILABLE = "interview_slot_available"
     INTERVIEW_BOOKED = "interview_booked"
+    # P1 — функция «Резерв» (раздел 20)
+    APPLICATION_RESERVED = "application_reserved"
 
 
 class NotificationStatus(StrEnum):

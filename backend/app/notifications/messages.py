@@ -56,6 +56,14 @@ def candidate_invited(*, vacancy_title: str, application_id: int) -> str:
     )
 
 
+def application_reserved(*, vacancy_title: str, application_id: int) -> str:
+    return (
+        f"Работодатель сохранил ваш отклик на вакансию «{vacancy_title}» "
+        "в резерве и может вернуться к решению позже.\n"
+        f"Открыть отклик: {application_url(application_id)}"
+    )
+
+
 def mutual_interest_for_candidate(*, vacancy_title: str, application_id: int) -> str:
     return (
         f"Взаимный интерес по вакансии «{vacancy_title}». "

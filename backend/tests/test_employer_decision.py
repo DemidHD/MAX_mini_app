@@ -35,6 +35,7 @@ from app.main import app
 from app.users.models import User
 from app.vacancies.models import ScreeningQuestion, Vacancy, VacancyCriterion
 from tests.factories import build_init_data, max_user_payload
+from tests.fakes import RecordingTransport
 
 _employer_ids = count(780000)
 _candidate_ids = count(781000)
@@ -337,6 +338,99 @@ async def test_candidates_list_content(client: AsyncClient) -> None:
     assert refreshed_card["schedule"] == "night"
 
 
+# --- Ranking и объяснимость (P1, разделы 64, 65) --------------------------------
+
+
+async def test_ranking_orders_by_desirable_criteria(client: AsyncClient) -> None:
+    employer = await _employer(client)
+    vacancy = await _vacancy(
+        employer,
+        criteria=[
+            (CriterionType.SCHEDULE, {"schedule": "full_time"}, True),
+            (CriterionType.LOCATION, {"city": "Москва"}, False),
+            (CriterionType.EXPERIENCE, {"min_months": 12}, False),
+        ],
+    )
+    await VacancyCriterion.filter(
+        vacancy_id=vacancy.id, type=CriterionType.EXPERIENCE
+    ).update(weight=Decimal("2"))
+
+    # Проходит оба желательных критерия — самый высокий score
+    best = await _application(
+        vacancy,
+        await _candidate(
+            profile=FITTING_PROFILE | {"experience_months": 24}
+        ),
+    )
+    # Проходит только зарплату/локацию, опыта не хватает
+    middle = await _application(
+        vacancy,
+        await _candidate(
+            profile=FITTING_PROFILE | {"experience_months": 1}
+        ),
+    )
+    # Не проходит ни один желательный критерий
+    worst = await _application(
+        vacancy,
+        await _candidate(
+            profile=FITTING_PROFILE | {"city": "Казань", "experience_months": 1}
+        ),
+    )
+    for application in (best, middle, worst):
+        await application.refresh_from_db()
+        await Application.filter(id=application.id).update(
+            hard_filter_result={
+                "criteria": [
+                    {"type": "schedule", "required": True, "passed": True},
+                    {
+                        "type": "location",
+                        "required": False,
+                        "passed": application.id == best.id,
+                    },
+                    {
+                        "type": "experience",
+                        "required": False,
+                        "passed": application.id in (best.id, middle.id),
+                    },
+                ],
+                "failed_questions": [],
+            }
+        )
+
+    items = (await _candidates(client, vacancy)).json()["items"]
+    order = [item["application_id"] for item in items]
+    assert order == [best.id, middle.id, worst.id]
+
+    best_card = items[0]
+    assert sorted(best_card["explanation"]["matched"]) == ["location", "schedule"]
+    assert best_card["explanation"]["experience"] == {
+        "candidate": 24,
+        "required": 12,
+    }
+
+    worst_card = items[-1]
+    assert worst_card["explanation"]["matched"] == ["schedule"]
+    assert worst_card["explanation"]["experience"] == {
+        "candidate": 1,
+        "required": 12,
+    }
+
+
+async def test_explanation_without_experience_criterion_is_none(
+    client: AsyncClient,
+) -> None:
+    employer = await _employer(client)
+    vacancy = await _vacancy(
+        employer, criteria=[(CriterionType.SCHEDULE, {"schedule": "full_time"}, True)]
+    )
+    application, _ = await _screened_application(client, vacancy, answers=[])
+    await _relogin_employer(client, employer)
+
+    card = (await _candidates(client, vacancy)).json()["items"][0]
+    assert card["application_id"] == application.id
+    assert card["explanation"]["experience"] is None
+
+
 # --- Приглашение и взаимный интерес -------------------------------------------
 
 
@@ -431,15 +525,7 @@ async def test_reject_flow(client: AsyncClient) -> None:
     no_reason_decision = await EmployerDecision.get(application_id=without_reason.id)
     assert no_reason_decision.reject_reason is None
 
-    # 3. В P0 backend принимает только invited/rejected
-    reserved_target = await _application(vacancy, await _candidate())
-    reserved = await _decide(client, reserved_target, action="reserved")
-    assert reserved.status_code == 422
-    assert reserved.json()["error"]["code"] == "decision_action_not_supported"
-    await reserved_target.refresh_from_db()
-    assert reserved_target.status == ApplicationStatus.PASSED
-
-    # 4. Неизвестный action и причина без отказа — ошибки валидации
+    # 3. Неизвестный action и причина без отказа — ошибки валидации
     unknown_action_target = await _application(vacancy, await _candidate())
     unknown_action = await _decide(client, unknown_action_target, action="maybe")
     assert unknown_action.status_code == 422
@@ -463,7 +549,7 @@ async def test_reject_flow(client: AsyncClient) -> None:
     )
     assert unknown_reason.status_code == 422
 
-    # 5. Список отражает новый статус, аналитика хранит причину отказа
+    # 4. Список отражает новый статус, аналитика хранит причину отказа
     listed = {
         item["application_id"]: item["status"]
         for item in (await _candidates(client, vacancy)).json()["items"]
@@ -477,6 +563,82 @@ async def test_reject_flow(client: AsyncClient) -> None:
     assert any(
         event.payload.get("reject_reason") == "salary" for event in rejection_events
     )
+
+
+# --- Резерв (P1, раздел 20) -----------------------------------------------------
+
+
+async def test_reserve_flow(
+    client: AsyncClient, notifications: RecordingTransport
+) -> None:
+    employer = await _employer(client)
+    vacancy = await _vacancy(employer)
+
+    # 1. Резерв — промежуточное решение: сохраняется, кандидат уведомлён,
+    # match не создаётся
+    application = await _application(vacancy, await _candidate())
+    reserved = await _decide(client, application, action="reserved")
+    assert reserved.status_code == 200, reserved.text
+    body = reserved.json()
+    assert body["status"] == ApplicationStatus.RESERVED.value
+    assert body["action"] == DecisionAction.RESERVED.value
+    assert body["match_id"] is None
+    assert not await Match.filter(application_id=application.id).exists()
+
+    decision = await EmployerDecision.get(application_id=application.id)
+    assert decision.action == DecisionAction.RESERVED
+
+    candidate_texts = notifications.texts_for(application.candidate_id)
+    assert len(candidate_texts) == 1
+    assert vacancy.title in candidate_texts[0]
+
+    reserve_events = await AnalyticsEvent.filter(
+        user_id=employer.user_id, event_name="candidate_reserved"
+    )
+    assert len(reserve_events) == 1
+    assert reserve_events[0].payload["application_id"] == application.id
+
+    # 2. Резерв виден в списке кандидатов работодателя
+    listed = {
+        item["application_id"]: item["status"]
+        for item in (await _candidates(client, vacancy)).json()["items"]
+    }
+    assert listed[application.id] == ApplicationStatus.RESERVED.value
+
+    # 3. Из резерва можно позже пригласить — с созданием match, как обычно
+    invited = await _decide(client, application, action="invited")
+    assert invited.status_code == 200, invited.text
+    assert invited.json()["status"] == ApplicationStatus.MUTUAL_INTEREST.value
+    assert invited.json()["match_id"] is not None
+
+    # 4. Повторное решение по уже приглашённому — недопустимый переход
+    again = await _decide(client, application, action="rejected")
+    assert again.status_code == 409
+
+    # 5. Из резерва можно и отклонить
+    reserved_then_rejected = await _application(vacancy, await _candidate())
+    assert (
+        await _decide(client, reserved_then_rejected, action="reserved")
+    ).status_code == 200
+    rejected = await _decide(
+        client, reserved_then_rejected, action="rejected", reject_reason="other"
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["status"] == ApplicationStatus.REJECTED.value
+
+    # 6. Из screening/hard_filter_failed в резерв нельзя — как и в любое
+    # другое решение
+    not_screened = await _application(
+        vacancy, await _candidate(), status=ApplicationStatus.SCREENING
+    )
+    blocked = await _decide(client, not_screened, action="reserved")
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "invalid_state_transition"
+
+    # 7. Дважды в резерв — тоже недопустимый переход
+    twice = await _application(vacancy, await _candidate())
+    assert (await _decide(client, twice, action="reserved")).status_code == 200
+    assert (await _decide(client, twice, action="reserved")).status_code == 409
 
 
 # --- Предусловия и права на решение --------------------------------------------

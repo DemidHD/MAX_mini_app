@@ -24,6 +24,7 @@ from app.core.config import settings
 from app.core.enums import UserRole, VacancyStatus
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.users.models import User
+from app.vacancies import images
 from app.vacancies.models import ScreeningQuestion, Vacancy, VacancyCriterion
 from app.vacancies.schemas import (
     CriterionRead,
@@ -90,11 +91,15 @@ async def create_vacancy(user: User, payload: VacancyCreateRequest) -> VacancyRe
             salary_max=payload.salary_max,
             schedule=payload.schedule,
         )
+    else:
+        await _ensure_draft_limit(user)
 
     async with in_transaction() as connection:
         vacancy = await Vacancy.create(
             employer_id=user.user_id,
             title=payload.title,
+            company_name=payload.company_name,
+            description=payload.description,
             location=payload.location,
             salary_min=payload.salary_min,
             salary_max=payload.salary_max,
@@ -105,6 +110,11 @@ async def create_vacancy(user: User, payload: VacancyCreateRequest) -> VacancyRe
         )
         await _replace_criteria(vacancy.id, payload.criteria, connection=connection)
         await _replace_questions(vacancy.id, payload.questions, connection=connection)
+
+    # Вне транзакции: внешний HTTP-запрос под открытым соединением к БД —
+    # плохая практика (по тому же принципу уведомления отправляются после
+    # commit). Лучшее старание: неудача поиска не должна мешать созданию.
+    await _assign_image(vacancy)
 
     await analytics.log_event(
         "vacancy_created",
@@ -129,9 +139,13 @@ async def get_vacancy(user: User, vacancy_id: int) -> VacancyRead:
     исчезала бы из его собственного отклика вместе с историей.
     """
     if user.role is UserRole.EMPLOYER:
-        return await _read(await get_own_vacancy(user, vacancy_id), owner=True)
+        return await _read(
+            await get_own_vacancy(user, vacancy_id), owner=True, refresh_image=True
+        )
     if user.role is UserRole.CANDIDATE:
-        return await _read(await _visible_vacancy(user, vacancy_id), owner=False)
+        return await _read(
+            await _visible_vacancy(user, vacancy_id), owner=False, refresh_image=True
+        )
     # До выбора роли доступны только onboarding-эндпоинты (раздел 12)
     raise ForbiddenError("Сначала нужно выбрать роль", code="role_not_selected")
 
@@ -192,7 +206,15 @@ async def update_vacancy(
     changed = payload.model_fields_set
     fields = {
         name: getattr(payload, name)
-        for name in ("title", "location", "salary_min", "salary_max", "schedule")
+        for name in (
+            "title",
+            "company_name",
+            "description",
+            "location",
+            "salary_min",
+            "salary_max",
+            "schedule",
+        )
         if name in changed
     }
 
@@ -272,6 +294,40 @@ def _ensure_status_transition(
             code="invalid_vacancy_status_transition",
             details={"status": current.value, "target": target.value},
         )
+
+
+async def _ensure_draft_limit(user: User) -> None:
+    """Не более `VACANCY_DRAFT_LIMIT` черновиков на работодателя одновременно.
+
+    Ограничение не из тех-доки — продуктовое решение против брошенных
+    черновиков в кабинете. Публикация освобождает место: считаются только
+    вакансии в `draft`. Проверка не атомарна (без блокировки на пользователя):
+    при двух параллельных запросах лимит теоретически можно превысить на
+    одну вакансию — цена отдельной блокировки того не стоит для
+    некритичного продуктового ограничения на масштабе микробизнеса.
+    """
+    count = await Vacancy.filter(
+        employer_id=user.user_id, status=VacancyStatus.DRAFT
+    ).count()
+    if count >= settings.vacancy_draft_limit:
+        raise ConflictError(
+            f"Достигнут лимит черновиков вакансий ({settings.vacancy_draft_limit})",
+            code="draft_limit_reached",
+            details={"limit": settings.vacancy_draft_limit},
+        )
+
+
+async def _assign_image(vacancy: Vacancy) -> None:
+    """Подбирает фото по теме вакансии сразу при создании (не из тех-доки).
+
+    Лучшее старание, как и с ИИ (раздел 57): ошибка поиска не должна мешать
+    созданию вакансии — она просто останется без фото до следующего открытия
+    карточки, где подбор повторится (`app.vacancies.images.ensure_fresh_image`).
+    """
+    image_url = await images.find_image(vacancy.title)
+    if image_url:
+        vacancy.image_url = image_url
+        await vacancy.save(update_fields=["image_url", "updated_at"])
 
 
 def _ensure_publishable(
@@ -384,16 +440,28 @@ async def _new_public_token(connection: BaseDBAsyncClient) -> str:
     )
 
 
-async def _read(vacancy: Vacancy, *, owner: bool) -> VacancyRead:
-    return (await _read_many([vacancy], owner=owner))[0]
+async def _read(
+    vacancy: Vacancy, *, owner: bool, refresh_image: bool = False
+) -> VacancyRead:
+    return (await _read_many([vacancy], owner=owner, refresh_image=refresh_image))[0]
 
 
 async def _read_many(
-    vacancies: list[Vacancy], *, owner: bool
+    vacancies: list[Vacancy], *, owner: bool, refresh_image: bool = False
 ) -> list[VacancyRead]:
-    """Собирает ответы страницы: число запросов не зависит от её размера."""
+    """Собирает ответы страницы: число запросов не зависит от её размера.
+
+    `refresh_image`: только для отдачи одной вакансии (`GET /vacancies/{id}`).
+    В списках (лента, кабинет работодателя) фото отдаётся как есть — на каждую
+    карточку страницы отдельная синхронная проверка ссылки означала бы до
+    `limit` внешних запросов на один список, а не одну на открытую вакансию.
+    """
     if not vacancies:
         return []
+
+    if refresh_image:
+        for vacancy in vacancies:
+            await images.ensure_fresh_image(vacancy)
 
     vacancy_ids = [vacancy.id for vacancy in vacancies]
     criteria: dict[int, list[VacancyCriterion]] = {}
@@ -442,10 +510,13 @@ def _build_read(
         id=vacancy.id,
         employer_id=vacancy.employer_id,
         title=vacancy.title,
+        company_name=vacancy.company_name,
+        description=vacancy.description,
         location=vacancy.location,
         salary_min=vacancy.salary_min,
         salary_max=vacancy.salary_max,
         schedule=vacancy.schedule,
+        image_url=vacancy.image_url,
         status=vacancy.status,
         public_token=vacancy.public_token if owner else None,
         public_url=_public_url(vacancy) if owner else None,
