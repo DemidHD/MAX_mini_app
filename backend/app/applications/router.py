@@ -5,7 +5,7 @@
 разделяет раздел 27.
 """
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Query, Response, status
 
 from app.applications import employer_service, service
 from app.applications.schemas import (
@@ -38,7 +38,10 @@ apply_rate_limiter = SlidingWindowRateLimiter(
     status_code=status.HTTP_201_CREATED,
 )
 async def apply(
-    vacancy_id: int, user: CandidateUser, response: Response
+    vacancy_id: int,
+    user: CandidateUser,
+    response: Response,
+    background_tasks: BackgroundTasks,
 ) -> ApplicationCreatedResponse:
     """Создаёт отклик на вакансию и отправляет его на первичный отбор.
 
@@ -46,7 +49,7 @@ async def apply(
     кодом `200` вместо `201`.
     """
     await apply_rate_limiter.check(str(user.user_id))
-    application, created = await service.apply(user, vacancy_id)
+    application, created = await service.apply(user, vacancy_id, background_tasks)
     if not created:
         response.status_code = status.HTTP_200_OK
     return ApplicationCreatedResponse(
@@ -59,10 +62,10 @@ async def apply(
 
 @router.get("/{application_id}", response_model=CandidateApplicationRead)
 async def get_application(
-    application_id: int, user: CandidateUser
+    application_id: int, user: CandidateUser, background_tasks: BackgroundTasks
 ) -> CandidateApplicationRead:
     """Статус отклика кандидата — переживает перезагрузку экрана (C06/C07)."""
-    return await service.get_application(user, application_id)
+    return await service.get_application(user, application_id, background_tasks)
 
 
 @router.get("/{application_id}/screening", response_model=ScreeningStateResponse)
@@ -83,10 +86,15 @@ async def submit_screening(
 
 @router.post("/{application_id}/decision", response_model=DecisionResponse)
 async def decide(
-    application_id: int, payload: DecisionRequest, user: EmployerUser
+    application_id: int,
+    payload: DecisionRequest,
+    user: EmployerUser,
+    background_tasks: BackgroundTasks,
 ) -> DecisionResponse:
     """Решение работодателя по отклику: отклонить или пригласить."""
-    return await employer_service.decide(user, application_id, payload)
+    return await employer_service.decide(
+        user, application_id, payload, background_tasks
+    )
 
 
 @employer_router.get(

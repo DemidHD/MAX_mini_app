@@ -1,14 +1,21 @@
-"""Тексты уведомлений и ссылки в Mini App. Раздел 46 тех-доки.
+"""Тексты уведомлений и путь в Mini App для кнопки «Открыть детали». Раздел 46
+тех-доки.
 
 Раздел 44 требует, чтобы текст формировал сервис уведомлений, а не каждый
 endpoint по-своему. Поэтому все формулировки живут здесь.
 
-Ссылки собираются из `APP_URL` и маршрутов Mini App (`frontend/src/app/routes.ts`).
-Набор маршрутов — общий контракт с frontend: если там путь поменяется,
-поменять нужно и здесь.
+До этого файла в тексте была голая https-ссылка `APP_URL + путь` — открытая
+не из MAX (например, тапом по ссылке в сообщении бота), она вела в системный
+браузер без `window.WebApp.initData`, и пользователь попадал на экран ошибки
+авторизации вместо конкретного экрана (баг демо). Поэтому `NotificationContent`
+отдаёт путь отдельно от текста: `app.bot.keyboard` строит из него кнопку,
+которая открывает Mini App по-настоящему (`OpenAppButton`, `maxapi`), а не
+браузер. Путь — маршрут frontend (`frontend/src/app/routes.ts`), без
+`APP_URL`: он не глобальный URL, а `start_param` при открытии Mini App.
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -32,78 +39,112 @@ MONTHS_GENITIVE = (
 )
 
 
-def employer_home_url() -> str:
-    """Кабинет работодателя."""
-    return _url("/employer")
+@dataclass(frozen=True)
+class NotificationContent:
+    """Текст уведомления и путь для кнопки «Открыть детали» под ним."""
+
+    text: str
+    path: str
 
 
-def application_url(application_id: int) -> str:
+def employer_home_path() -> str:
+    """Кабинет работодателя — только когда нет конкретной сущности."""
+    return "/employer"
+
+
+def application_path(application_id: int) -> str:
     """Экран отклика кандидата: статус, слоты, назначенное собеседование."""
-    return _url(f"/candidate/applications/{application_id}")
+    return f"/candidate/applications/{application_id}"
 
 
-def application_created(*, vacancy_title: str) -> str:
-    return (
-        f"Новый отклик на вакансию «{vacancy_title}».\n"
-        f"Посмотреть кандидата: {employer_home_url()}"
+def employer_application_path(application_id: int) -> str:
+    """Карточка кандидата у работодателя — конкретный отклик, а не кабинет.
+
+    UX-карта требует открывать именно сущность события (раздел «Данные:
+    application_id»), а не главную: раньше все уведомления работодателю вели
+    на `employer_home_path()`, хотя `application_id` уже был известен.
+    """
+    return f"/employer/applications/{application_id}"
+
+
+def application_created(*, vacancy_title: str, application_id: int) -> NotificationContent:
+    return NotificationContent(
+        text=f"Новый отклик на вакансию «{vacancy_title}».",
+        path=employer_application_path(application_id),
     )
 
 
-def candidate_invited(*, vacancy_title: str, application_id: int) -> str:
-    return (
-        f"Вас пригласили на собеседование по вакансии «{vacancy_title}».\n"
-        f"Открыть отклик: {application_url(application_id)}"
+def candidate_invited(*, vacancy_title: str, application_id: int) -> NotificationContent:
+    return NotificationContent(
+        text=f"Вас пригласили на собеседование по вакансии «{vacancy_title}».",
+        path=application_path(application_id),
     )
 
 
-def application_reserved(*, vacancy_title: str, application_id: int) -> str:
-    return (
-        f"Работодатель сохранил ваш отклик на вакансию «{vacancy_title}» "
-        "в резерве и может вернуться к решению позже.\n"
-        f"Открыть отклик: {application_url(application_id)}"
+def application_reserved(*, vacancy_title: str, application_id: int) -> NotificationContent:
+    return NotificationContent(
+        text=(
+            f"Работодатель сохранил ваш отклик на вакансию «{vacancy_title}» "
+            "в резерве и может вернуться к решению позже."
+        ),
+        path=application_path(application_id),
     )
 
 
-def mutual_interest_for_candidate(*, vacancy_title: str, application_id: int) -> str:
-    return (
-        f"Взаимный интерес по вакансии «{vacancy_title}». "
-        "Осталось выбрать время собеседования.\n"
-        f"Выбрать время: {application_url(application_id)}"
+def mutual_interest_for_candidate(
+    *, vacancy_title: str, application_id: int
+) -> NotificationContent:
+    return NotificationContent(
+        text=(
+            f"Взаимный интерес по вакансии «{vacancy_title}». "
+            "Осталось выбрать время собеседования."
+        ),
+        path=application_path(application_id),
     )
 
 
-def mutual_interest_for_employer(*, vacancy_title: str) -> str:
-    return (
-        f"Взаимный интерес по вакансии «{vacancy_title}». "
-        "Предложите кандидату время собеседования.\n"
-        f"Открыть вакансию: {employer_home_url()}"
+def mutual_interest_for_employer(
+    *, vacancy_title: str, application_id: int
+) -> NotificationContent:
+    return NotificationContent(
+        text=(
+            f"Взаимный интерес по вакансии «{vacancy_title}». "
+            "Предложите кандидату время собеседования."
+        ),
+        path=employer_application_path(application_id),
     )
 
 
-def interview_slot_available(*, vacancy_title: str, application_id: int) -> str:
-    return (
-        f"Работодатель предложил время собеседования по вакансии «{vacancy_title}».\n"
-        f"Выбрать время: {application_url(application_id)}"
+def interview_slot_available(
+    *, vacancy_title: str, application_id: int
+) -> NotificationContent:
+    return NotificationContent(
+        text=f"Работодатель предложил время собеседования по вакансии «{vacancy_title}».",
+        path=application_path(application_id),
     )
 
 
 def interview_booked_for_candidate(
     *, vacancy_title: str, starts_at: datetime, application_id: int
-) -> str:
-    return (
-        f"Собеседование по вакансии «{vacancy_title}» назначено на "
-        f"{format_moment(starts_at)}.\n"
-        f"Детали: {application_url(application_id)}"
+) -> NotificationContent:
+    return NotificationContent(
+        text=(
+            f"Собеседование по вакансии «{vacancy_title}» назначено на "
+            f"{format_moment(starts_at)}."
+        ),
+        path=application_path(application_id),
     )
 
 
 def interview_booked_for_employer(
-    *, vacancy_title: str, starts_at: datetime
-) -> str:
-    return (
-        f"Кандидат выбрал время собеседования по вакансии «{vacancy_title}»: "
-        f"{format_moment(starts_at)}.\n"
-        f"Детали: {employer_home_url()}"
+    *, vacancy_title: str, starts_at: datetime, application_id: int
+) -> NotificationContent:
+    return NotificationContent(
+        text=(
+            f"Кандидат выбрал время собеседования по вакансии «{vacancy_title}»: "
+            f"{format_moment(starts_at)}."
+        ),
+        path=employer_application_path(application_id),
     )
 
 
@@ -111,8 +152,7 @@ def bot_greeting() -> str:
     """Ответ бота на `/start` и на открытие диалога (раздел 43)."""
     return (
         "MAX Найм помогает нанять сотрудника и пройти путь до назначенного "
-        "собеседования.\n"
-        f"Открыть приложение: {_url('/')}"
+        "собеседования."
     )
 
 
@@ -135,7 +175,3 @@ def format_moment(moment: datetime) -> str:
     label = "МСК" if zone_name == "Europe/Moscow" else zone_name
     month = MONTHS_GENITIVE[local.month - 1]
     return f"{local.day} {month}, {local:%H:%M} ({label})"
-
-
-def _url(path: str) -> str:
-    return f"{settings.app_url.rstrip('/')}{path}"

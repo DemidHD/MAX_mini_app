@@ -4,7 +4,7 @@
 как их разделяет раздел 27.
 """
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, BackgroundTasks, Response, status
 
 from app.auth.dependencies import CandidateUser, CurrentUser, EmployerUser
 from app.core.config import settings
@@ -33,10 +33,13 @@ book_rate_limiter = SlidingWindowRateLimiter(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_slot(
-    vacancy_id: int, payload: SlotCreateRequest, user: EmployerUser
+    vacancy_id: int,
+    payload: SlotCreateRequest,
+    user: EmployerUser,
+    background_tasks: BackgroundTasks,
 ) -> InterviewSlotRead:
     """Добавляет время собеседования по вакансии работодателя."""
-    return await service.create_slot(user, vacancy_id, payload)
+    return await service.create_slot(user, vacancy_id, payload, background_tasks)
 
 
 @vacancies_router.get("/{vacancy_id}/slots", response_model=SlotListResponse)
@@ -64,7 +67,11 @@ async def cancel_slot(vacancy_id: int, slot_id: int, user: EmployerUser) -> Resp
     status_code=status.HTTP_201_CREATED,
 )
 async def book(
-    match_id: int, payload: BookingRequest, user: CandidateUser, response: Response
+    match_id: int,
+    payload: BookingRequest,
+    user: CandidateUser,
+    response: Response,
+    background_tasks: BackgroundTasks,
 ) -> InterviewRead:
     """Бронирует слот и назначает собеседование.
 
@@ -72,7 +79,7 @@ async def book(
     существующее, но с кодом `200` вместо `201`.
     """
     await book_rate_limiter.check(str(user.user_id))
-    interview, created = await service.book(user, match_id, payload)
+    interview, created = await service.book(user, match_id, payload, background_tasks)
     if not created:
         response.status_code = status.HTTP_200_OK
     return interview

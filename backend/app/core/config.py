@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     max_bot_token: str = ""
     # Секрет webhook'а — отдельный от токена бота (раздел 41 тех-доки).
     max_webhook_secret: str = ""
+    # Публичное имя бота (без @) — нужно кнопке "открыть приложение"
+    # (`OpenAppButton.web_app`, `maxapi`), не для проверки подписи.
+    max_bot_username: str = ""
 
     # --- Сессии ---
     session_secret: str = ""

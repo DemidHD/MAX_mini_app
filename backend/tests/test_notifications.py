@@ -355,7 +355,9 @@ async def test_disabled_channel_leaves_notification_pending(
     employer = await _employer(client)
 
     class _Disabled:
-        async def send(self, user_id: int, text: str) -> None:
+        async def send(
+            self, user_id: int, text: str, *, deep_link: str | None = None
+        ) -> None:
             raise NotificationsDisabledError("Уведомления выключены настройкой")
 
     notification_service.set_transport(_Disabled())
@@ -379,7 +381,9 @@ async def test_broken_notification_service_does_not_break_apply(
     await _candidate(client)
 
     class _Broken:
-        async def send(self, user_id: int, text: str) -> None:
+        async def send(
+            self, user_id: int, text: str, *, deep_link: str | None = None
+        ) -> None:
             raise TypeError("дефект транспорта")
 
     notification_service.set_transport(_Broken())
@@ -402,8 +406,14 @@ async def test_message_formatting(monkeypatch) -> None:
     monkeypatch.setattr(settings, "notification_timezone", "Mars/Olympus")
     assert messages.format_moment(moment) == "1 октября, 09:30 (UTC)"
 
-    # 3. Ссылки на Mini App собираются из app_url
-    monkeypatch.setattr(settings, "app_url", "https://example.com/")
-    assert messages.employer_home_url() == "https://example.com/employer"
-    assert messages.application_url(7) == "https://example.com/candidate/applications/7"
-    assert "https://example.com/" in messages.bot_greeting()
+    # 3. Путь для кнопки «Открыть детали» — маршрут Mini App, без APP_URL:
+    # это start_param у OpenAppButton (maxapi), а не голая https-ссылка,
+    # которая раньше открывалась в браузере без initData (баг демо)
+    assert messages.employer_home_path() == "/employer"
+    assert messages.application_path(7) == "/candidate/applications/7"
+    assert messages.employer_application_path(7) == "/employer/applications/7"
+
+    # 4. Текст уведомления больше не содержит саму ссылку — её несёт кнопка
+    created = messages.application_created(vacancy_title="Бариста", application_id=7)
+    assert "http" not in created.text
+    assert created.path == "/employer/applications/7"

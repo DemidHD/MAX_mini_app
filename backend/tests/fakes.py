@@ -9,6 +9,7 @@ class SentMessage:
 
     user_id: int
     text: str
+    deep_link: str | None = None
 
 
 @dataclass
@@ -27,11 +28,15 @@ class RecordingTransport:
     error: Exception | None = None
     attempts: int = 0
 
-    async def send(self, user_id: int, text: str) -> None:
+    async def send(
+        self, user_id: int, text: str, *, deep_link: str | None = None
+    ) -> None:
         self.attempts += 1
         if self.attempts <= self.fail_first:
             raise self.error or RuntimeError("MAX временно недоступен")
-        self.messages.append(SentMessage(user_id=user_id, text=text))
+        self.messages.append(
+            SentMessage(user_id=user_id, text=text, deep_link=deep_link)
+        )
 
     def texts_for(self, user_id: int) -> list[str]:
         return [message.text for message in self.messages if message.user_id == user_id]
@@ -48,6 +53,8 @@ class FailingTransport:
     error: Exception = field(default_factory=lambda: RuntimeError("MAX недоступен"))
     attempts: int = 0
 
-    async def send(self, user_id: int, text: str) -> None:
+    async def send(
+        self, user_id: int, text: str, *, deep_link: str | None = None
+    ) -> None:
         self.attempts += 1
         raise self.error

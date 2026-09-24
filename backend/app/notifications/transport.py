@@ -23,8 +23,15 @@ class NotificationsDisabledError(RuntimeError):
 class NotificationTransport(Protocol):
     """Минимум, который нужен сервису уведомлений."""
 
-    async def send(self, user_id: int, text: str) -> None:
+    async def send(
+        self, user_id: int, text: str, *, deep_link: str | None = None
+    ) -> None:
         """Отправляет сообщение пользователю MAX.
+
+        `deep_link` — путь внутри Mini App для кнопки «Открыть детали»
+        (не из тех-доки — исправление бага демо: обычная https-ссылка в
+        тексте открывалась в браузере без `initData`). `None` — кнопка
+        ведёт на корень приложения.
 
         Бросает исключение, если отправка не удалась: решение о повторе
         принимает `NotificationService`.
@@ -37,20 +44,27 @@ class MaxBotTransport:
     Раздел 45: персональное уведомление отправляется по `user_id`.
     """
 
-    async def send(self, user_id: int, text: str) -> None:
+    async def send(
+        self, user_id: int, text: str, *, deep_link: str | None = None
+    ) -> None:
         # Импорт внутри метода: без настроенного бота модуль `maxapi` не нужен
         from app.bot.dispatcher import get_bot
+        from app.bot.keyboard import open_app_attachment
 
         bot = get_bot()
         if bot is None:
             raise NotificationsDisabledError("Бот MAX не настроен")
-        await bot.send_message(user_id=user_id, text=text)
+        await bot.send_message(
+            user_id=user_id, text=text, attachments=open_app_attachment(deep_link)
+        )
 
 
 class DisabledTransport:
     """Заглушка для окружения без бота: сообщение никуда не уходит."""
 
-    async def send(self, user_id: int, text: str) -> None:
+    async def send(
+        self, user_id: int, text: str, *, deep_link: str | None = None
+    ) -> None:
         logger.info("Уведомления выключены, сообщение не отправлено")
         raise NotificationsDisabledError("Уведомления выключены настройкой")
 

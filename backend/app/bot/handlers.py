@@ -8,6 +8,7 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+from app.bot.keyboard import open_app_attachment
 from app.notifications import messages
 
 if TYPE_CHECKING:
@@ -56,6 +57,10 @@ async def _greet(event: Any, user_id: int | None) -> None:
         return
 
     try:
-        await bot.send_message(user_id=user_id, text=messages.bot_greeting())
+        await bot.send_message(
+            user_id=user_id,
+            text=messages.bot_greeting(),
+            attachments=open_app_attachment(None),
+        )
     except Exception:  # noqa: BLE001 — обработчик не должен падать
         logger.exception("Не удалось ответить пользователю %s", user_id)

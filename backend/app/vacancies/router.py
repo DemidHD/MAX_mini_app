@@ -7,7 +7,7 @@
 в `GET /vacancies/{vacancy_id}` как параметр пути.
 """
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, BackgroundTasks, Query, status
 
 from app.auth.dependencies import CurrentUser, EmployerUser
 from app.vacancies import service
@@ -24,27 +24,31 @@ employer_router = APIRouter(prefix="/employer", tags=["vacancies"])
 
 @router.post("", response_model=VacancyRead, status_code=status.HTTP_201_CREATED)
 async def create_vacancy(
-    payload: VacancyCreateRequest, user: EmployerUser
+    payload: VacancyCreateRequest, user: EmployerUser, background_tasks: BackgroundTasks
 ) -> VacancyRead:
     """Создаёт вакансию вместе с условиями и вопросами отбора."""
-    return await service.create_vacancy(user, payload)
+    return await service.create_vacancy(user, payload, background_tasks)
 
 
 @router.get("/public/{token}", response_model=VacancyRead)
-async def get_vacancy_by_public_token(token: str, user: CurrentUser) -> VacancyRead:
+async def get_vacancy_by_public_token(
+    token: str, user: CurrentUser, background_tasks: BackgroundTasks
+) -> VacancyRead:
     """Вакансия по публичной ссылке `{APP_URL}/v/{token}` (раздел 15).
 
     Два сегмента пути (`public/{token}`) не пересекаются с `{vacancy_id}`
     выше — коллизии, из-за которой роутер ленты подключается отдельно, здесь
     нет.
     """
-    return await service.get_vacancy_by_public_token(user, token)
+    return await service.get_vacancy_by_public_token(user, token, background_tasks)
 
 
 @router.get("/{vacancy_id}", response_model=VacancyRead)
-async def get_vacancy(vacancy_id: int, user: CurrentUser) -> VacancyRead:
+async def get_vacancy(
+    vacancy_id: int, user: CurrentUser, background_tasks: BackgroundTasks
+) -> VacancyRead:
     """Вакансия: работодателю — своя в любом статусе, кандидату — опубликованная."""
-    return await service.get_vacancy(user, vacancy_id)
+    return await service.get_vacancy(user, vacancy_id, background_tasks)
 
 
 @router.patch("/{vacancy_id}", response_model=VacancyRead)

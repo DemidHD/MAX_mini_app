@@ -13,6 +13,7 @@ import secrets
 from decimal import Decimal
 from typing import Any
 
+from fastapi import BackgroundTasks
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.functions import Count
 from tortoise.transactions import in_transaction
@@ -70,7 +71,9 @@ async def get_own_vacancy(user: User, vacancy_id: int) -> Vacancy:
     return vacancy
 
 
-async def create_vacancy(user: User, payload: VacancyCreateRequest) -> VacancyRead:
+async def create_vacancy(
+    user: User, payload: VacancyCreateRequest, background_tasks: BackgroundTasks
+) -> VacancyRead:
     """Создаёт вакансию работодателя (раздел 28).
 
     Условия и вопросы отбора создаются тем же запросом: по отдельности
@@ -111,10 +114,11 @@ async def create_vacancy(user: User, payload: VacancyCreateRequest) -> VacancyRe
         await _replace_criteria(vacancy.id, payload.criteria, connection=connection)
         await _replace_questions(vacancy.id, payload.questions, connection=connection)
 
-    # Вне транзакции: внешний HTTP-запрос под открытым соединением к БД —
-    # плохая практика (по тому же принципу уведомления отправляются после
-    # commit). Лучшее старание: неудача поиска не должна мешать созданию.
-    await _assign_image(vacancy)
+    # В фоне, после ответа: внешний HTTP-запрос к Openverse не должен ни
+    # держать открытое соединение к БД, ни задерживать ответ — раздел 83
+    # запрещает делать внешний сервис обязательным на пути P0. Первый ответ
+    # уходит без фото, следующее открытие карточки увидит уже найденное.
+    background_tasks.add_task(_assign_image, vacancy)
 
     await analytics.log_event(
         "vacancy_created",
@@ -131,7 +135,9 @@ async def create_vacancy(user: User, payload: VacancyCreateRequest) -> VacancyRe
     return await _read(vacancy, owner=True)
 
 
-async def get_vacancy(user: User, vacancy_id: int) -> VacancyRead:
+async def get_vacancy(
+    user: User, vacancy_id: int, background_tasks: BackgroundTasks
+) -> VacancyRead:
     """Вакансия по идентификатору (раздел 27).
 
     Работодатель видит только свои вакансии в любом статусе, кандидат —
@@ -140,11 +146,15 @@ async def get_vacancy(user: User, vacancy_id: int) -> VacancyRead:
     """
     if user.role is UserRole.EMPLOYER:
         return await _read(
-            await get_own_vacancy(user, vacancy_id), owner=True, refresh_image=True
+            await get_own_vacancy(user, vacancy_id),
+            owner=True,
+            background_tasks=background_tasks,
         )
     if user.role is UserRole.CANDIDATE:
         return await _read(
-            await _visible_vacancy(user, vacancy_id), owner=False, refresh_image=True
+            await _visible_vacancy(user, vacancy_id),
+            owner=False,
+            background_tasks=background_tasks,
         )
     # До выбора роли доступны только onboarding-эндпоинты (раздел 12)
     raise ForbiddenError("Сначала нужно выбрать роль", code="role_not_selected")
@@ -171,7 +181,9 @@ async def _visible_vacancy(user: User, vacancy_id: int) -> Vacancy:
     return vacancy
 
 
-async def get_vacancy_by_public_token(user: User, token: str) -> VacancyRead:
+async def get_vacancy_by_public_token(
+    user: User, token: str, background_tasks: BackgroundTasks
+) -> VacancyRead:
     """Вакансия по публичной ссылке (раздел 15): тот же вид, что кандидат
     получает по `GET /vacancies/{id}`. Роль смотрящего не важна — ссылку
     могут переслать кому угодно внутри MAX; важно только то же условие
@@ -187,7 +199,7 @@ async def get_vacancy_by_public_token(user: User, token: str) -> VacancyRead:
         ).exists()
         if not applied:
             raise NotFoundError("Вакансия не найдена", code="vacancy_not_found")
-    return await _read(vacancy, owner=False, refresh_image=True)
+    return await _read(vacancy, owner=False, background_tasks=background_tasks)
 
 
 async def delete_vacancy(user: User, vacancy_id: int) -> None:
@@ -209,7 +221,9 @@ async def delete_vacancy(user: User, vacancy_id: int) -> None:
     logger.info("Черновик вакансии %s удалён работодателем %s", vacancy_id, user.user_id)
 
 
-async def read_vacancy_for_candidate(vacancy: Vacancy) -> VacancyRead:
+async def read_vacancy_for_candidate(
+    vacancy: Vacancy, background_tasks: BackgroundTasks
+) -> VacancyRead:
     """Вакансия в кандидатском виде — без владельческих полей.
 
     Для мест, где видимость вакансии уже проверена по другому правилу
@@ -217,7 +231,7 @@ async def read_vacancy_for_candidate(vacancy: Vacancy) -> VacancyRead:
     `app.applications.service.get_application`), а не по обычному пути
     `GET /vacancies/{id}`.
     """
-    return await _read(vacancy, owner=False, refresh_image=True)
+    return await _read(vacancy, owner=False, background_tasks=background_tasks)
 
 
 async def list_own_vacancies(
@@ -490,27 +504,35 @@ async def _new_public_token(connection: BaseDBAsyncClient) -> str:
 
 
 async def _read(
-    vacancy: Vacancy, *, owner: bool, refresh_image: bool = False
+    vacancy: Vacancy, *, owner: bool, background_tasks: BackgroundTasks | None = None
 ) -> VacancyRead:
-    return (await _read_many([vacancy], owner=owner, refresh_image=refresh_image))[0]
+    return (
+        await _read_many([vacancy], owner=owner, background_tasks=background_tasks)
+    )[0]
 
 
 async def _read_many(
-    vacancies: list[Vacancy], *, owner: bool, refresh_image: bool = False
+    vacancies: list[Vacancy],
+    *,
+    owner: bool,
+    background_tasks: BackgroundTasks | None = None,
 ) -> list[VacancyRead]:
     """Собирает ответы страницы: число запросов не зависит от её размера.
 
-    `refresh_image`: только для отдачи одной вакансии (`GET /vacancies/{id}`).
-    В списках (лента, кабинет работодателя) фото отдаётся как есть — на каждую
-    карточку страницы отдельная синхронная проверка ссылки означала бы до
-    `limit` внешних запросов на один список, а не одну на открытую вакансию.
+    `background_tasks`: только для отдачи одной вакансии (`GET /vacancies/{id}`
+    и её эквиваленты). Ответ уходит с той ссылкой на фото, что уже сохранена —
+    проверка и подбор новой (`images.ensure_fresh_image`) идут в фоне, после
+    ответа: внешний Openverse не должен быть обязательной частью пути P0
+    (раздел 83), а следующее открытие карточки увидит уже обновлённую ссылку.
+    В списках (лента, кабинет работодателя) фоновая проверка не планируется
+    вовсе — иначе один список запускал бы до `limit` фоновых запросов разом.
     """
     if not vacancies:
         return []
 
-    if refresh_image:
+    if background_tasks is not None:
         for vacancy in vacancies:
-            await images.ensure_fresh_image(vacancy)
+            background_tasks.add_task(images.ensure_fresh_image, vacancy)
 
     vacancy_ids = [vacancy.id for vacancy in vacancies]
     criteria: dict[int, list[VacancyCriterion]] = {}

@@ -71,6 +71,7 @@ async def bot_mock(monkeypatch) -> AsyncIterator[MaxBotMock]:
     mock = MaxBotMock()
     monkeypatch.setattr(settings, "bot_enabled", True)
     monkeypatch.setattr(settings, "max_bot_token", "test-bot-token")
+    monkeypatch.setattr(settings, "max_bot_username", "max_hiring_bot")
     monkeypatch.setattr(settings, "max_webhook_secret", WEBHOOK_SECRET)
     monkeypatch.setattr(settings, "max_webhook_path", "/webhook/max")
     monkeypatch.setattr(bot_dispatcher, "_bot", mock)
@@ -92,6 +93,17 @@ async def webhook_client(bot_mock: MaxBotMock) -> AsyncIterator[AsyncClient]:
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _open_app_button(sent: dict[str, Any]) -> Any:
+    """Достаёт кнопку «Открыть …» из вложений отправленного сообщения.
+
+    Раньше приветствие несло голую https-ссылку прямо в тексте — она
+    открывалась в браузере без `window.WebApp.initData` (баг демо). Теперь
+    ссылку заменяет кнопка `OpenAppButton`, которая открывает сам Mini App.
+    """
+    attachment = sent["attachments"][0]
+    return attachment.payload.buttons[0][0]
 
 
 def _max_user(user_id: int) -> dict[str, Any]:
@@ -144,17 +156,24 @@ async def _deliver(client: AsyncClient, update: dict[str, Any]):
 async def test_webhook_routing_flow(
     webhook_client: AsyncClient, bot_mock: MaxBotMock
 ) -> None:
-    # 1. Открытие диалога отвечает приветствием со ссылкой на Mini App (раздел 43)
+    # 1. Открытие диалога отвечает приветствием с кнопкой, открывающей Mini App
+    # (раздел 43) — не голой https-ссылкой в тексте
     started = await _deliver(webhook_client, bot_started_update(BOT_USER_ID))
     assert started.status_code == 200, started.text
-    assert bot_mock.sent == [{"user_id": BOT_USER_ID, "text": messages.bot_greeting()}]
+    assert len(bot_mock.sent) == 1
+    assert bot_mock.sent[0]["user_id"] == BOT_USER_ID
+    assert bot_mock.sent[0]["text"] == messages.bot_greeting()
+    greeting_button = _open_app_button(bot_mock.sent[0])
+    assert greeting_button.web_app == "max_hiring_bot"
+    assert greeting_button.payload is None
     bot_mock.sent.clear()
 
-    # 2. /start отвечает тем же приветствием
+    # 2. /start отвечает тем же приветствием и той же кнопкой
     start_command = await _deliver(webhook_client, message_update(BOT_USER_ID, "/start"))
     assert start_command.status_code == 200, start_command.text
     assert [item["user_id"] for item in bot_mock.sent] == [BOT_USER_ID]
-    assert "Открыть приложение" in bot_mock.sent[0]["text"]
+    assert bot_mock.sent[0]["text"] == messages.bot_greeting()
+    assert _open_app_button(bot_mock.sent[0]).web_app == "max_hiring_bot"
     bot_mock.sent.clear()
 
     # 3. Бот в P0 не ведёт переписку: на обычные сообщения он не отвечает
@@ -186,12 +205,21 @@ async def test_webhook_routing_flow(
 
 
 async def test_transport_sends_through_bot(bot_mock: MaxBotMock) -> None:
-    """Боевой транспорт вызывает `send_message` по `user_id` (раздел 45)."""
-    await MaxBotTransport().send(CANDIDATE_USER_ID, "Собеседование назначено")
+    """Боевой транспорт вызывает `send_message` по `user_id` (раздел 45)
+    и передаёт `deep_link` кнопке, а не голой ссылкой в тексте."""
+    await MaxBotTransport().send(
+        CANDIDATE_USER_ID,
+        "Собеседование назначено",
+        deep_link="/candidate/applications/9",
+    )
 
-    assert bot_mock.sent == [
-        {"user_id": CANDIDATE_USER_ID, "text": "Собеседование назначено"}
-    ]
+    assert len(bot_mock.sent) == 1
+    sent = bot_mock.sent[0]
+    assert sent["user_id"] == CANDIDATE_USER_ID
+    assert sent["text"] == "Собеседование назначено"
+    button = _open_app_button(sent)
+    assert button.web_app == "max_hiring_bot"
+    assert button.payload == "/candidate/applications/9"
 
 
 async def test_transport_propagates_api_error(bot_mock: MaxBotMock) -> None:

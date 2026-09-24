@@ -15,6 +15,7 @@ lock slot → verify available → book slot → create interview → update app
 import logging
 from datetime import datetime, timedelta, timezone
 
+from fastapi import BackgroundTasks
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.transactions import in_transaction
 
@@ -56,7 +57,10 @@ ACTIVE_SLOT_STATUSES = (InterviewSlotStatus.AVAILABLE, InterviewSlotStatus.BOOKE
 
 
 async def create_slot(
-    user: User, vacancy_id: int, payload: SlotCreateRequest
+    user: User,
+    vacancy_id: int,
+    payload: SlotCreateRequest,
+    background_tasks: BackgroundTasks,
 ) -> InterviewSlotRead:
     """Работодатель добавляет время для собеседования (раздел 37).
 
@@ -69,7 +73,8 @@ async def create_slot(
     параллельных запроса оба прошли бы проверку.
 
     Кандидатам со взаимным интересом уходит `interview_slot_available`
-    (раздел 46) — после commit, ошибка отправки слот не отменяет.
+    (раздел 46) — в фоне, после commit: ошибка отправки слот не отменяет, и
+    повторы не должны держать работодателя перед ответом.
     """
     vacancy = await vacancies_service.get_own_vacancy(user, vacancy_id)
     starts_at, ends_at = _validated_interval(payload)
@@ -110,7 +115,7 @@ async def create_slot(
             using_db=connection,
         )
 
-    await _notify_slot_available(slot, vacancy)
+    await _notify_slot_available(slot, vacancy, background_tasks)
     logger.info("Создан слот %s по вакансии %s", slot.id, vacancy.id)
     return _slot_read(slot)
 
@@ -170,7 +175,10 @@ async def cancel_slot(user: User, vacancy_id: int, slot_id: int) -> None:
 
 
 async def book(
-    user: User, match_id: int, payload: BookingRequest
+    user: User,
+    match_id: int,
+    payload: BookingRequest,
+    background_tasks: BackgroundTasks,
 ) -> tuple[InterviewRead, bool]:
     """Кандидат бронирует слот (разделы 37, 56).
 
@@ -243,7 +251,9 @@ async def book(
             "slot_id": locked_slot.id,
         },
     )
-    await _notify_interview_booked(interview, locked_slot, locked_application)
+    await _notify_interview_booked(
+        interview, locked_slot, locked_application, background_tasks
+    )
     logger.info(
         "Назначено собеседование %s: match=%s слот=%s",
         interview.id,
@@ -253,7 +263,9 @@ async def book(
     return _interview_read(interview, locked_slot, locked_application, match.id), True
 
 
-async def _notify_slot_available(slot: InterviewSlot, vacancy: Vacancy) -> None:
+async def _notify_slot_available(
+    slot: InterviewSlot, vacancy: Vacancy, background_tasks: BackgroundTasks
+) -> None:
     """Сообщает о новом времени тем, кто его ждёт (раздел 46).
 
     Получатели — кандидаты со взаимным интересом по этой вакансии, которые
@@ -261,7 +273,9 @@ async def _notify_slot_available(slot: InterviewSlot, vacancy: Vacancy) -> None:
     время не нужно, а остальным отклик его и не показывает.
 
     Сообщение приходит один раз на вакансию: сущность события — вакансия,
-    а не слот, иначе пять слотов подряд дали бы пять уведомлений.
+    а не слот, иначе пять слотов подряд дали бы пять уведомлений. Рассылка
+    планируется в фоне: получателей может быть несколько, и работодатель не
+    должен ждать их всех перед ответом на создание слота.
     """
     waiting = await Application.filter(
         vacancy_id=vacancy.id, status=ApplicationStatus.MUTUAL_INTEREST
@@ -269,7 +283,8 @@ async def _notify_slot_available(slot: InterviewSlot, vacancy: Vacancy) -> None:
     if not waiting:
         return
 
-    await notification_service.interview_slot_available(
+    background_tasks.add_task(
+        notification_service.interview_slot_available,
         vacancy_id=vacancy.id,
         vacancy_title=vacancy.title,
         recipients=[
@@ -282,7 +297,10 @@ async def _notify_slot_available(slot: InterviewSlot, vacancy: Vacancy) -> None:
 
 
 async def _notify_interview_booked(
-    interview: Interview, slot: InterviewSlot, application: Application
+    interview: Interview,
+    slot: InterviewSlot,
+    application: Application,
+    background_tasks: BackgroundTasks,
 ) -> None:
     """Сообщает обеим сторонам, что собеседование назначено (раздел 47)."""
     vacancy = await Vacancy.get_or_none(id=application.vacancy_id)
@@ -291,7 +309,8 @@ async def _notify_interview_booked(
         logger.warning("Вакансия отклика %s не найдена", application.id)
         return
 
-    await notification_service.interview_booked(
+    background_tasks.add_task(
+        notification_service.interview_booked,
         interview_id=interview.id,
         application_id=application.id,
         candidate_id=application.candidate_id,

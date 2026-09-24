@@ -73,7 +73,9 @@ class NotificationService:
             NotificationType.APPLICATION_CREATED,
             user_id=employer_id,
             entity_id=application_id,
-            text=messages.application_created(vacancy_title=vacancy_title),
+            content=messages.application_created(
+                vacancy_title=vacancy_title, application_id=application_id
+            ),
         )
 
     async def candidate_invited(
@@ -84,7 +86,7 @@ class NotificationService:
             NotificationType.CANDIDATE_INVITED,
             user_id=candidate_id,
             entity_id=application_id,
-            text=messages.candidate_invited(
+            content=messages.candidate_invited(
                 vacancy_title=vacancy_title, application_id=application_id
             ),
         )
@@ -97,7 +99,7 @@ class NotificationService:
             NotificationType.APPLICATION_RESERVED,
             user_id=candidate_id,
             entity_id=application_id,
-            text=messages.application_reserved(
+            content=messages.application_reserved(
                 vacancy_title=vacancy_title, application_id=application_id
             ),
         )
@@ -121,7 +123,7 @@ class NotificationService:
             NotificationType.MUTUAL_INTEREST,
             user_id=candidate_id,
             entity_id=match_id,
-            text=messages.mutual_interest_for_candidate(
+            content=messages.mutual_interest_for_candidate(
                 vacancy_title=vacancy_title, application_id=application_id
             ),
         )
@@ -129,7 +131,9 @@ class NotificationService:
             NotificationType.MUTUAL_INTEREST,
             user_id=employer_id,
             entity_id=match_id,
-            text=messages.mutual_interest_for_employer(vacancy_title=vacancy_title),
+            content=messages.mutual_interest_for_employer(
+                vacancy_title=vacancy_title, application_id=application_id
+            ),
         )
 
     async def interview_slot_available(
@@ -153,7 +157,7 @@ class NotificationService:
                 NotificationType.INTERVIEW_SLOT_AVAILABLE,
                 user_id=recipient.user_id,
                 entity_id=vacancy_id,
-                text=messages.interview_slot_available(
+                content=messages.interview_slot_available(
                     vacancy_title=vacancy_title,
                     application_id=recipient.application_id,
                 ),
@@ -174,7 +178,7 @@ class NotificationService:
             NotificationType.INTERVIEW_BOOKED,
             user_id=candidate_id,
             entity_id=interview_id,
-            text=messages.interview_booked_for_candidate(
+            content=messages.interview_booked_for_candidate(
                 vacancy_title=vacancy_title,
                 starts_at=starts_at,
                 application_id=application_id,
@@ -184,8 +188,10 @@ class NotificationService:
             NotificationType.INTERVIEW_BOOKED,
             user_id=employer_id,
             entity_id=interview_id,
-            text=messages.interview_booked_for_employer(
-                vacancy_title=vacancy_title, starts_at=starts_at
+            content=messages.interview_booked_for_employer(
+                vacancy_title=vacancy_title,
+                starts_at=starts_at,
+                application_id=application_id,
             ),
         )
 
@@ -195,7 +201,7 @@ class NotificationService:
         *,
         user_id: int,
         entity_id: int,
-        text: str,
+        content: messages.NotificationContent,
     ) -> None:
         """Доставляет одно уведомление одному получателю.
 
@@ -206,7 +212,7 @@ class NotificationService:
             log = await self._claim(event_type, user_id=user_id, entity_id=entity_id)
             if log is None:
                 return
-            await self._send_with_retry(log, user_id=user_id, text=text)
+            await self._send_with_retry(log, user_id=user_id, content=content)
         except Exception:  # noqa: BLE001 — уведомление не ломает сценарий
             logger.exception(
                 "Не удалось обработать уведомление %s для пользователя %s",
@@ -246,7 +252,11 @@ class NotificationService:
         return log
 
     async def _send_with_retry(
-        self, log: NotificationLog, *, user_id: int, text: str
+        self,
+        log: NotificationLog,
+        *,
+        user_id: int,
+        content: messages.NotificationContent,
     ) -> None:
         """Отправляет сообщение, повторяя попытку при временной ошибке."""
         attempts = max(1, settings.notification_max_attempts)
@@ -254,7 +264,9 @@ class NotificationService:
 
         for attempt in range(1, attempts + 1):
             try:
-                await self.transport.send(user_id, text)
+                await self.transport.send(
+                    user_id, content.text, deep_link=content.path
+                )
             except NotificationsDisabledError as error:
                 # Канал выключен: повторять нечего, но и отказом это не
                 # считается — уведомление останется ожидающим отправки

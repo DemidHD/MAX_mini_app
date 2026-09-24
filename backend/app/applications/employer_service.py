@@ -11,6 +11,7 @@
 import logging
 from decimal import Decimal
 
+from fastapi import BackgroundTasks
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.transactions import in_transaction
 
@@ -150,7 +151,10 @@ async def _criteria_context(
 
 
 async def decide(
-    user: User, application_id: int, payload: DecisionRequest
+    user: User,
+    application_id: int,
+    payload: DecisionRequest,
+    background_tasks: BackgroundTasks,
 ) -> DecisionResponse:
     """Решение работодателя по отклику (разделы 20, 35, 36).
 
@@ -166,8 +170,9 @@ async def decide(
     работодатель может позже пригласить или отклонить тем же эндпоинтом
     (переход описан в `state.py`).
 
-    Уведомления (раздел 46) отправляются после commit: ошибка уведомления
-    решение не отменяет (раздел 47).
+    Уведомления (раздел 46) планируются в фоне, после commit: ошибка
+    уведомления решение не отменяет (раздел 47), а повторы отправки не должны
+    держать работодателя перед экраном решения.
     """
     action = _ensure_supported_action(payload)
     decision_status = DECISION_TARGET[action]
@@ -221,9 +226,9 @@ async def decide(
             },
         )
     if match_id is not None:
-        await _notify_invited(user, application, match_id)
+        await _notify_invited(user, application, match_id, background_tasks)
     elif action is DecisionAction.RESERVED:
-        await _notify_reserved(application)
+        await _notify_reserved(application, background_tasks)
     logger.info(
         "Решение работодателя: отклик=%s действие=%s статус=%s",
         application.id,
@@ -241,11 +246,18 @@ async def decide(
     )
 
 
-async def _notify_invited(user: User, application: Application, match_id: int) -> None:
+async def _notify_invited(
+    user: User,
+    application: Application,
+    match_id: int,
+    background_tasks: BackgroundTasks,
+) -> None:
     """Уведомления приглашённому кандидату и обеим сторонам (раздел 46).
 
     Название вакансии читается уже после commit: в тексте сообщения оно
-    нужно, а держать лишние данные в транзакции незачем.
+    нужно, а держать лишние данные в транзакции незачем. Сама отправка
+    (`maxapi`, с повторами) планируется в фоне — она не должна держать
+    работодателя перед ответом на решение.
     """
     vacancy = await Vacancy.get_or_none(id=application.vacancy_id)
     if vacancy is None:
@@ -253,12 +265,14 @@ async def _notify_invited(user: User, application: Application, match_id: int) -
         logger.warning("Вакансия отклика %s не найдена", application.id)
         return
 
-    await notification_service.candidate_invited(
+    background_tasks.add_task(
+        notification_service.candidate_invited,
         candidate_id=application.candidate_id,
         application_id=application.id,
         vacancy_title=vacancy.title,
     )
-    await notification_service.mutual_interest(
+    background_tasks.add_task(
+        notification_service.mutual_interest,
         match_id=match_id,
         application_id=application.id,
         candidate_id=application.candidate_id,
@@ -267,14 +281,17 @@ async def _notify_invited(user: User, application: Application, match_id: int) -
     )
 
 
-async def _notify_reserved(application: Application) -> None:
+async def _notify_reserved(
+    application: Application, background_tasks: BackgroundTasks
+) -> None:
     """Уведомление кандидату о переводе в резерв (P1, раздел 46)."""
     vacancy = await Vacancy.get_or_none(id=application.vacancy_id)
     if vacancy is None:
         logger.warning("Вакансия отклика %s не найдена", application.id)
         return
 
-    await notification_service.application_reserved(
+    background_tasks.add_task(
+        notification_service.application_reserved,
         candidate_id=application.candidate_id,
         application_id=application.id,
         vacancy_title=vacancy.title,

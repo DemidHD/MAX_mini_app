@@ -19,6 +19,7 @@ Hard filters складываются из двух источников (раз
 import logging
 from typing import Any
 
+from fastapi import BackgroundTasks
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
@@ -53,7 +54,9 @@ logger = logging.getLogger("app.applications")
 
 
 
-async def apply(user: User, vacancy_id: int) -> tuple[Application, bool]:
+async def apply(
+    user: User, vacancy_id: int, background_tasks: BackgroundTasks
+) -> tuple[Application, bool]:
     """Отклик кандидата на вакансию (раздел 32).
 
     Проверки в порядке раздела 32: вакансия существует, вакансия
@@ -66,7 +69,9 @@ async def apply(user: User, vacancy_id: int) -> tuple[Application, bool]:
     параллельный запрос ловится через `IntegrityError`.
 
     Уведомление `application_created` работодателю (раздел 46) отправляется
-    после создания: ошибка отправки отклик не отменяет (раздел 47).
+    в фоне, после ответа: ошибка отправки отклик не отменяет (раздел 47), а
+    сама отправка — с повторами до `notification_retry_delay_seconds *
+    attempt` — не должна держать кандидата перед экраном отбора.
 
     Возвращает отклик и признак того, что он создан именно этим запросом.
     """
@@ -104,7 +109,8 @@ async def apply(user: User, vacancy_id: int) -> tuple[Application, bool]:
         user_id=user.user_id,
         payload={"application_id": application.id, "vacancy_id": vacancy.id},
     )
-    await notification_service.application_created(
+    background_tasks.add_task(
+        notification_service.application_created,
         employer_id=vacancy.employer_id,
         application_id=application.id,
         vacancy_title=vacancy.title,
@@ -233,7 +239,9 @@ async def submit_screening(
     )
 
 
-async def get_application(user: User, application_id: int) -> CandidateApplicationRead:
+async def get_application(
+    user: User, application_id: int, background_tasks: BackgroundTasks
+) -> CandidateApplicationRead:
     """Статус отклика кандидата — переживает перезагрузку экрана (C06/C07).
 
     `POST /applications/{id}/screening` отдаёт `failed_criteria` только
@@ -243,7 +251,9 @@ async def get_application(user: User, application_id: int) -> CandidateApplicati
     """
     application = await _own_application(user, application_id)
     vacancy = await Vacancy.get(id=application.vacancy_id)
-    vacancy_read = await vacancies_service.read_vacancy_for_candidate(vacancy)
+    vacancy_read = await vacancies_service.read_vacancy_for_candidate(
+        vacancy, background_tasks
+    )
 
     match = await Match.get_or_none(application_id=application.id)
     interview_id: int | None = None

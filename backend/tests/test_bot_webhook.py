@@ -49,7 +49,9 @@ class _FakeBot:
         self.subscriptions: list[tuple[str, str | None]] = []
         self.fail = False
 
-    async def send_message(self, *, user_id: int, text: str) -> None:
+    async def send_message(
+        self, *, user_id: int, text: str, attachments: object = None
+    ) -> None:
         if self.fail:
             raise RuntimeError("MAX недоступен")
         self.messages.append((user_id, text))

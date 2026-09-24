@@ -42,8 +42,8 @@ from app.users.models import User
 from app.vacancies.models import Vacancy, VacancyCriterion
 from tests.factories import build_init_data, max_user_payload
 
-_employer_ids = count(810000)
-_candidate_ids = count(811000)
+_employer_ids = count(860000)
+_candidate_ids = count(861000)
 
 MOSCOW_PROFILE: dict[str, Any] = {
     "desired_role": "Бариста",
@@ -62,11 +62,11 @@ async def _clean_vacancies():
     # интервью само не убрано (в отличие от Application/Match, которые
     # каскадно чистятся вместе с вакансией).
     slot_ids = await InterviewSlot.filter(
-        vacancy__employer_id__gte=810000, vacancy__employer_id__lt=811000
+        vacancy__employer_id__gte=860000, vacancy__employer_id__lt=861000
     ).values_list("id", flat=True)
     if slot_ids:
         await Interview.filter(slot_id__in=slot_ids).delete()
-    await Vacancy.filter(employer_id__gte=810000, employer_id__lt=811000).delete()
+    await Vacancy.filter(employer_id__gte=860000, employer_id__lt=861000).delete()
 
 
 def _fresh_client() -> AsyncClient:
