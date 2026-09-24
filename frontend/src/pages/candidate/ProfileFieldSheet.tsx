@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { CloseIcon } from '@/components/icons'
-import type { CandidateProfileData } from '@/mocks/demoApi'
+import type { CandidateProfile } from '@/api/hiring'
 import './ProfileFieldSheet.css'
 
 export type ProfileField = 'desired_role' | 'city' | 'salary' | 'schedule' | 'experience_months' | 'available_from'
@@ -47,10 +47,10 @@ export function ProfileFieldSheet({
   onClose,
 }: {
   field: ProfileField
-  profile: CandidateProfileData
+  profile: CandidateProfile
   scheduleOptions: string[]
   todayKey: string
-  onChange: (patch: Partial<CandidateProfileData>) => void
+  onChange: (patch: Partial<CandidateProfile>) => void
   onClose: () => void
 }) {
   const [text, setText] = useState(() => {

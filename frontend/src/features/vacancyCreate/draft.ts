@@ -1,9 +1,14 @@
+import type { Vacancy } from '@/api/hiring'
+import type { VacancyFieldsInput, VacancyQuestionInput } from '@/api/vacancies'
+import { formatDayMonth } from '@/lib/format'
+
 /**
- * Константы и типы черновика вакансии. Экраны создания вакансии
- * (E02–E05 в UX-карте) работают с этим черновиком локально — backend ещё
- * не умеет ни создавать, ни хранить вакансии (см. комментарий в
- * `api/vacancies.ts`), поэтому черновик живёт в localStorage вкладки, а не
- * на сервере.
+ * Константы и типы черновика вакансии (экраны E02–E05 в UX-карте).
+ *
+ * Черновик живёт на сервере: первый «Далее» создаёт вакансию в статусе
+ * `draft`, следующие шаги сохраняют её через `PATCH`, публикация — `PATCH
+ * status: published`. В localStorage вкладки лежит только текущий ввод и id
+ * серверного черновика, чтобы перезагрузка не теряла несохранённое.
  */
 
 export type CriterionKey = 'schedule' | 'location' | 'experience' | 'available_from' | 'salary'
@@ -25,17 +30,28 @@ export const EXPERIENCE_OPTIONS = [
   { months: 36, label: 'От 3 лет' },
 ] as const
 
+/**
+ * Срок выхода — обязательное условие `available_from` (кандидат готов выйти
+ * не позже даты). «Как можно скорее» — не «сегодня»: договор, согласование и
+ * подпись занимают минимум пару дней, поэтому это 3 дня от публикации.
+ */
 export const AVAILABLE_FROM_OPTIONS = [
-  { id: 'asap', label: 'Как можно скорее', days: 0 },
-  { id: '3d', label: 'В течение 3 дней', days: 3 },
+  { id: 'asap', label: 'Как можно скорее', days: 3 },
   { id: 'week', label: 'В течение недели', days: 7 },
+  { id: '2weeks', label: 'В течение двух недель', days: 14 },
   { id: 'month', label: 'В течение месяца', days: 30 },
 ] as const
 
 export type AvailableFromId = (typeof AVAILABLE_FROM_OPTIONS)[number]['id']
 
 export interface VacancyDraft {
+  /** id серверного черновика; `null` — ещё ни разу не сохранялся. */
+  vacancyId: number | null
+  /** Фото, которое backend подобрал черновику при создании (только для показа). */
+  imageUrl: string | null
   title: string
+  companyName: string
+  description: string
   salaryMin: string
   salaryMax: string
   location: string
@@ -47,7 +63,11 @@ export interface VacancyDraft {
 }
 
 export const EMPTY_DRAFT: VacancyDraft = {
+  vacancyId: null,
+  imageUrl: null,
   title: '',
+  companyName: '',
+  description: '',
   salaryMin: '',
   salaryMax: '',
   location: '',
@@ -89,18 +109,20 @@ export function isBasicsComplete(draft: VacancyDraft): boolean {
   return draft.title.trim().length > 0 && draft.location.trim().length > 0
 }
 
+export const COMPANY_NAME_MAX_LENGTH = 255
+export const DESCRIPTION_MAX_LENGTH = 1000
+
 /**
- * Собирает тело `POST /vacancies` из черновика. Форма `value` — по
- * `docs/api-contracts.md` («Формат vacancy_criteria.value»), чтобы уже
- * реализованный подбор кандидатов понимал критерии, если backend когда-нибудь
- * подключит этот роутер.
+ * Поля вакансии для `POST` / `PATCH /vacancies`, статус задаёт вызывающий.
+ * Форма `criteria[].value` — по `docs/api-contracts.md` («Формат
+ * vacancy_criteria.value»): так её понимает подбор ленты.
  */
-export function buildCreateVacancyPayload(draft: VacancyDraft) {
+export function buildVacancyFields(draft: VacancyDraft): VacancyFieldsInput {
   const criteria = CRITERION_KEYS.map((key) => ({
     type: key,
     required: draft.criteria[key],
     value: criterionValue(key, draft),
-  }))
+  })).filter((criterion) => Object.keys(criterion.value).length > 0)
 
   return {
     title: draft.title.trim(),
@@ -108,17 +130,59 @@ export function buildCreateVacancyPayload(draft: VacancyDraft) {
     salary_min: draft.salaryMin.trim() ? Number(draft.salaryMin) : null,
     salary_max: draft.salaryMax.trim() ? Number(draft.salaryMax) : null,
     schedule: draft.schedule || null,
-    status: 'published' as const,
+    company_name: draft.companyName.trim() || null,
+    description: draft.description.trim() || null,
     criteria,
+    questions: buildScreeningQuestions(draft),
   }
+}
+
+/**
+ * Вопросы первичного отбора (C05) по обязательным условиям.
+ *
+ * Решение продукта: вопросы составляются из условий вакансии, отдельного
+ * экрана вопросов у работодателя нет. Отказ на вопрос по обязательному
+ * условию — отсекающий (`must_equal`, api-contracts).
+ */
+function buildScreeningQuestions(draft: VacancyDraft): VacancyQuestionInput[] {
+  const questions: VacancyQuestionInput[] = []
+  const mustBeYes = { must_equal: true }
+  if (draft.criteria.schedule && draft.schedule) {
+    questions.push({
+      question: `Сможете работать по графику ${draft.schedule}?`,
+      type: 'boolean',
+      required: true,
+      validation_rules: mustBeYes,
+    })
+  }
+  if (draft.criteria.available_from) {
+    questions.push({
+      question: `Готовы выйти на работу до ${formatDayMonth(availableFromDate(draft.availableFrom))}?`,
+      type: 'boolean',
+      required: true,
+      validation_rules: mustBeYes,
+    })
+  }
+  return questions
+}
+
+/**
+ * Город для критерия `location`. Подбор сравнивает город профиля с
+ * `{"city": ...}` целиком, а в поле адреса пишут «Москва, м. Белорусская» —
+ * берём часть до первой запятой.
+ */
+function cityFromLocation(location: string): string {
+  return location.split(',')[0].trim()
 }
 
 function criterionValue(key: CriterionKey, draft: VacancyDraft): Record<string, unknown> {
   switch (key) {
     case 'schedule':
-      return { schedule: draft.schedule }
-    case 'location':
-      return { city: draft.location.trim() }
+      return draft.schedule ? { schedule: draft.schedule } : {}
+    case 'location': {
+      const city = cityFromLocation(draft.location)
+      return city ? { city } : {}
+    }
     case 'experience':
       return { min_months: draft.experienceMonths }
     case 'available_from':
@@ -146,4 +210,59 @@ export function criterionChipLabel(key: CriterionKey, draft: VacancyDraft): stri
       return 'Зарплата не указана'
     }
   }
+}
+
+/**
+ * Черновик с сервера → состояние формы: для продолжения незаконченной
+ * вакансии с главной (E01) или после повторного открытия Mini App.
+ */
+export function draftFromVacancy(vacancy: Vacancy): VacancyDraft {
+  const criterion = (key: CriterionKey) => vacancy.criteria.find((item) => item.type === key)
+  const required = { ...EMPTY_DRAFT.criteria }
+  for (const key of CRITERION_KEYS) {
+    const found = criterion(key)
+    if (found) required[key] = found.required
+  }
+
+  const minMonths = Number(criterion('experience')?.value.min_months)
+  const startDate = criterion('available_from')?.value.date
+
+  return {
+    vacancyId: vacancy.id,
+    imageUrl: vacancy.image_url ?? null,
+    title: vacancy.title,
+    companyName: vacancy.company_name ?? '',
+    description: vacancy.description ?? '',
+    salaryMin: moneyToInput(vacancy.salary_min),
+    salaryMax: moneyToInput(vacancy.salary_max),
+    location: vacancy.location ?? '',
+    schedule: vacancy.schedule ?? EMPTY_DRAFT.schedule,
+    experienceMonths: Number.isFinite(minMonths) ? minMonths : EMPTY_DRAFT.experienceMonths,
+    availableFrom: typeof startDate === 'string' ? availableFromIdForDate(startDate) : EMPTY_DRAFT.availableFrom,
+    criteria: required,
+  }
+}
+
+function moneyToInput(value: string | null): string {
+  return value === null ? '' : String(Math.round(Number(value)))
+}
+
+/** Ближайший вариант срока выхода, который не раньше сохранённой даты. */
+function availableFromIdForDate(date: string): AvailableFromId {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const days = Math.round((new Date(`${date}T00:00:00`).getTime() - today.getTime()) / 86_400_000)
+  return (AVAILABLE_FROM_OPTIONS.find((option) => option.days >= days) ?? AVAILABLE_FROM_OPTIONS.at(-1)!).id
+}
+
+export function isDraftEmpty(draft: VacancyDraft): boolean {
+  return (
+    draft.vacancyId === null &&
+    !draft.title.trim() &&
+    !draft.companyName.trim() &&
+    !draft.description.trim() &&
+    !draft.location.trim() &&
+    !draft.salaryMin.trim() &&
+    !draft.salaryMax.trim()
+  )
 }

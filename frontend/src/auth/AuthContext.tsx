@@ -20,6 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: response.user,
         currentStep: response.current_step,
         applicationId: response.application_id,
+        vacancyId: response.vacancy_id ?? null,
       })
     } catch (error) {
       setState({ status: 'error', error: error as Error })

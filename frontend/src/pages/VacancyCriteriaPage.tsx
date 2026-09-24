@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Typography } from '@maxhub/max-ui'
@@ -18,8 +19,24 @@ interface CriterionRow {
 
 /** Шаг 2 создания вакансии — экран «Что действительно важно?» в UX-карте. */
 export function VacancyCriteriaPage() {
-  const { draft, setCriterionRequired } = useVacancyDraft()
+  const { draft, setCriterionRequired, saveDraft } = useVacancyDraft()
   const navigate = useNavigate()
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Условия (и вопросы отбора из них) сохраняются в серверный черновик.
+  async function handleNext() {
+    setSaving(true)
+    setError(null)
+    try {
+      await saveDraft()
+      navigate(routes.employerVacancyPreview)
+    } catch {
+      setError('Не удалось сохранить условия. Попробуйте еще раз.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const rows: CriterionRow[] = [
     { key: 'schedule', icon: <CalendarIcon />, label: 'График', value: draft.schedule },
@@ -95,8 +112,10 @@ export function VacancyCriteriaPage() {
           </Typography.Body>
         </div>
 
-        <button type="button" className="vacancyCriteria__next" onClick={() => navigate(routes.employerVacancyPreview)}>
-          Предпросмотр
+        {error ? <Typography.Body className="vacancyCriteria__error">{error}</Typography.Body> : null}
+
+        <button type="button" className="vacancyCriteria__next" disabled={saving} onClick={() => void handleNext()}>
+          {saving ? 'Сохраняем…' : 'Предпросмотр'}
         </button>
       </div>
     </div>

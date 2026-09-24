@@ -1,5 +1,4 @@
 import { createBrowserRouter } from 'react-router-dom'
-import type { RouteObject } from 'react-router-dom'
 
 import { AppLayout } from '@/components/AppLayout'
 import { CandidateLayout } from '@/components/CandidateLayout'
@@ -24,17 +23,14 @@ import { ScreeningStartPage } from '@/pages/candidate/ScreeningStartPage'
 import { SlotPickerPage } from '@/pages/candidate/SlotPickerPage'
 import { VacancyDetailsPage } from '@/pages/candidate/VacancyDetailsPage'
 import { VacancyFeedPage } from '@/pages/candidate/VacancyFeedPage'
-import { DevScreensPage } from '@/pages/DevScreensPage'
 import { CandidateCardPage } from '@/pages/employer/CandidateCardPage'
 import { CandidatesQueuePage } from '@/pages/employer/CandidatesQueuePage'
 import { InterviewDetailsPage } from '@/pages/employer/InterviewDetailsPage'
 import { InterviewSlotsPage } from '@/pages/employer/InterviewSlotsPage'
 import { InviteConfirmPage } from '@/pages/employer/InviteConfirmPage'
+import { EditDraftPage } from '@/features/vacancyCreate/EditDraftPage'
 import { VacancyCreateLayout } from '@/features/vacancyCreate/VacancyCreateLayout'
 import { routes } from '@/app/routes'
-
-// Оглавление экранов с демо-данными — только для локальной разработки.
-const devRoutes: RouteObject[] = import.meta.env.DEV ? [{ path: routes.devScreens, element: <DevScreensPage /> }] : []
 
 export const router = createBrowserRouter([
   {
@@ -81,6 +77,7 @@ export const router = createBrowserRouter([
           { path: routes.employerVacancyCriteria, element: <VacancyCriteriaPage /> },
           { path: routes.employerVacancyPreview, element: <VacancyPreviewPage /> },
           { path: routes.employerVacancyPublished, element: <VacancyPublishedPage /> },
+          { path: routes.employerVacancyEdit(), element: <EditDraftPage /> },
         ],
       },
       { path: routes.employerVacancySlots(), element: <InterviewSlotsPage /> },
@@ -88,7 +85,6 @@ export const router = createBrowserRouter([
       { path: routes.employerApplicationInvite(), element: <InviteConfirmPage /> },
       { path: routes.employerInterview(), element: <InterviewDetailsPage /> },
 
-      ...devRoutes,
       { path: '*', element: <NotFoundPage /> },
     ],
   },

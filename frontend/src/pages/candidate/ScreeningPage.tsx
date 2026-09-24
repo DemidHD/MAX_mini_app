@@ -3,13 +3,14 @@ import type { ReactNode } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
+import { ApiError } from '@/api/client'
+import { getScreening, submitScreening } from '@/api/hiring'
 import type { ScreeningAnswer, ScreeningQuestion } from '@/api/hiring'
 import { BackButton } from '@/components/BackButton'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { LoadingScreen } from '@/components/LoadingScreen'
 import { CheckIcon, CloseIcon } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
-import { getScreening, submitScreening } from '@/mocks/demoApi'
 import './ScreeningPage.css'
 
 type AnswerValue = ScreeningAnswer['value']
@@ -33,6 +34,7 @@ export function ScreeningPage() {
   }
 
   const questions = [...state.data.questions].sort((a, b) => a.sort_order - b.sort_order)
+  if (questions.length === 0) return <Navigate to={routes.candidateScreeningStart(applicationId)} replace />
   return <ScreeningFlow applicationId={applicationId} questions={questions} />
 }
 
@@ -81,10 +83,10 @@ function ScreeningFlow({ applicationId, questions }: { applicationId: number; qu
     setSending(true)
     setError(null)
     try {
-      await submitScreening(
+      const result = await submitScreening(
         applicationId,
         questions
-          .filter((item) => answers[item.id] !== undefined && answers[item.id] !== '')
+          .filter((item) => answers[item.id] !== undefined && answers[item.id] !== null && answers[item.id] !== '')
           .map((item) => ({ question_id: item.id, value: answers[item.id] })),
       )
       try {
@@ -92,8 +94,21 @@ function ScreeningFlow({ applicationId, questions }: { applicationId: number; qu
       } catch {
         // Не критично.
       }
-      navigate(routes.candidateApplication(applicationId), { replace: true })
-    } catch {
+      // Какие условия не совпали, backend отдаёт только в ответе на отправку —
+      // передаём их экрану результата (C06).
+      navigate(routes.candidateApplication(applicationId), { replace: true, state: { screening: result } })
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.code === 'screening_already_completed') {
+        navigate(routes.candidateApplication(applicationId), { replace: true })
+        return
+      }
+      if (cause instanceof ApiError && cause.code === 'screening_answers_invalid') {
+        const invalid = Array.isArray(cause.details) ? (cause.details as { question_id: number }[]) : []
+        const first = questions.findIndex((item) => invalid.some((problem) => problem.question_id === item.id))
+        if (first >= 0) setIndex(first)
+        setError('Проверьте ответ на этот вопрос.')
+        return
+      }
       setError('Не удалось отправить ответы. Они сохранены — попробуйте еще раз.')
     } finally {
       setSending(false)
@@ -125,7 +140,7 @@ function ScreeningFlow({ applicationId, questions }: { applicationId: number; qu
         {question.required ? 'Обязательное условие' : 'Желательное условие'}
       </p>
 
-      <div className="screening__answers">
+      <div className="screening__answers" role="radiogroup" aria-label={question.question}>
         <AnswerInput question={question} value={value} onChange={setValue} />
       </div>
 
@@ -215,6 +230,7 @@ function BigOption({
       type="button"
       role="radio"
       aria-checked={selected}
+      aria-label={label}
       className={`screening__option${selected ? ' screening__option--selected' : ''}`}
       onClick={onClick}
     >
@@ -223,3 +239,4 @@ function BigOption({
     </button>
   )
 }
+

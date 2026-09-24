@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import type { CriterionType, Vacancy, VacancyCriterion } from '@/api/hiring'
+import type { CriterionType, VacancyCriterion, VacancySummary } from '@/api/hiring'
 import { BoltIcon, BriefcaseIcon, CalendarIcon, ClockIcon, CoinsIcon, DocumentIcon, PinIcon } from '@/components/icons'
 import { criterionLabel, formatDayMonthShort, scheduleLabel } from '@/lib/format'
 
@@ -23,7 +23,7 @@ export function criterionIcon(type: CriterionType, size = 22): ReactNode {
 }
 
 /** Три коротких факта вакансии: где, по какому графику, когда выходить. */
-export function vacancyFacts(vacancy: Vacancy, size = 22): { key: string; icon: ReactNode; label: string }[] {
+export function vacancyFacts(vacancy: VacancySummary, size = 22): { key: string; icon: ReactNode; label: string }[] {
   const facts: { key: string; icon: ReactNode; label: string }[] = []
   if (vacancy.location) facts.push({ key: 'location', icon: <PinIcon size={size} />, label: vacancy.location })
   if (vacancy.schedule) {

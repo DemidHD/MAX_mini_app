@@ -4,22 +4,23 @@ import { Typography } from '@maxhub/max-ui'
 
 import { routes } from '@/app/routes'
 import { ApiError } from '@/api/client'
-import { createVacancy } from '@/api/vacancies'
 import { useVacancyDraft } from '@/features/vacancyCreate/useVacancyDraft'
 import { VacancyStepHeader } from '@/features/vacancyCreate/VacancyStepHeader'
 import {
   CRITERION_KEYS,
   availableFromLabel,
-  buildCreateVacancyPayload,
   criterionChipLabel,
   formatSalaryRange,
 } from '@/features/vacancyCreate/draft'
 import heroPhoto from '@/assets/role-employer.webp'
 import './VacancyPreviewPage.css'
 
-/** Шаг 3 создания вакансии — экран E04 «Предпросмотр» в UX-карте. */
+/**
+ * Шаг 3 создания вакансии — экран E04 «Предпросмотр» в UX-карте: вакансия так,
+ * как её увидит кандидат. «Опубликовать» переводит черновик в `published`.
+ */
 export function VacancyPreviewPage() {
-  const { draft, setPublishedVacancy } = useVacancyDraft()
+  const { draft, publish } = useVacancyDraft()
   const navigate = useNavigate()
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,14 +32,11 @@ export function VacancyPreviewPage() {
     setPublishing(true)
     setError(null)
     try {
-      const vacancy = await createVacancy(buildCreateVacancyPayload(draft))
-      setPublishedVacancy(vacancy)
+      await publish()
       navigate(routes.employerVacancyPublished)
     } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 404) {
-        setError(
-          'Публикация вакансий пока не подключена на сервере — backend ещё не реализовал этот эндпоинт.',
-        )
+      if (cause instanceof ApiError && cause.code === 'vacancy_incomplete') {
+        setError('Не хватает данных для публикации: проверьте должность, адрес, зарплату и график.')
       } else {
         setError(cause instanceof ApiError ? cause.message : 'Не удалось опубликовать вакансию')
       }
@@ -53,9 +51,21 @@ export function VacancyPreviewPage() {
 
       <div className="vacancyPreview__body">
         <div className="vacancyPreview__photoCard">
-          <img className="vacancyPreview__photo" src={heroPhoto} alt="" />
+          {/* Фото, которое backend подобрал вакансии; пока его нет — иллюстрация. */}
+          <img
+            className="vacancyPreview__photo"
+            src={draft.imageUrl ?? heroPhoto}
+            alt=""
+            referrerPolicy="no-referrer"
+            onError={(event) => {
+            if (!event.currentTarget.src.endsWith(heroPhoto)) event.currentTarget.src = heroPhoto
+          }}
+          />
         </div>
 
+        {draft.companyName.trim() ? (
+          <Typography.Body className="vacancyPreview__company">{draft.companyName.trim()}</Typography.Body>
+        ) : null}
         <Typography.Title className="vacancyPreview__title">
           {draft.title || 'Без названия'}
         </Typography.Title>
@@ -77,6 +87,13 @@ export function VacancyPreviewPage() {
             {availableFromLabel(draft.availableFrom)}
           </span>
         </div>
+
+        {draft.description.trim() ? (
+          <section className="vacancyPreview__section">
+            <Typography.Title className="vacancyPreview__sectionTitle">О вакансии</Typography.Title>
+            <Typography.Body className="vacancyPreview__description">{draft.description.trim()}</Typography.Body>
+          </section>
+        ) : null}
 
         {requiredKeys.length > 0 ? (
           <section className="vacancyPreview__section">

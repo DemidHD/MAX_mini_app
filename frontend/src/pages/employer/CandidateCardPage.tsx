@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
+import { candidateLabel, decide } from '@/api/hiring'
 import type { CriterionType, EmployerCandidate, Vacancy } from '@/api/hiring'
 import { BackButton } from '@/components/BackButton'
 import { ErrorScreen } from '@/components/ErrorScreen'
@@ -19,7 +20,7 @@ import {
 } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
 import { criterionLabel, formatAvailableFrom, formatExperience, formatMoney } from '@/lib/format'
-import { candidateLabel, decide, getEmployerApplication } from '@/mocks/demoApi'
+import { loadApplicationView } from '@/pages/employer/applicationView'
 import './CandidateCardPage.css'
 
 const DECIDED_TEXT: Record<string, string> = {
@@ -36,9 +37,14 @@ const DECIDED_TEXT: Record<string, string> = {
  * «В резерв» — P1 (раздел 20), поэтому в P0 кнопка видна, но неактивна.
  */
 export function CandidateCardPage() {
-  const applicationId = Number(useParams().applicationId)
+  const params = useParams()
+  const vacancyId = Number(params.vacancyId)
+  const applicationId = Number(params.applicationId)
   const navigate = useNavigate()
-  const { state, reload } = useAsync((signal) => getEmployerApplication(applicationId, signal), [applicationId])
+  const { state, reload } = useAsync(
+    (signal) => loadApplicationView(vacancyId, applicationId, signal, true),
+    [vacancyId, applicationId],
+  )
   const [rejecting, setRejecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -47,7 +53,7 @@ export function CandidateCardPage() {
     return <ErrorScreen error={state.error} onRetry={reload} onBack={() => navigate(-1)} />
   }
 
-  const { vacancy, candidate, queue, interviewId } = state.data
+  const { vacancy, candidate, items, queue, interviewId } = state.data
   const position = queue.indexOf(applicationId)
   const queuePath = routes.employerVacancyCandidates(vacancy.id)
   const decided = candidate.status !== 'passed'
@@ -59,7 +65,7 @@ export function CandidateCardPage() {
       await decide(applicationId, 'rejected')
       // После решения — следующий кандидат или возврат к очереди (UX-карта, раздел 9).
       const next = queue.slice(position + 1)[0] ?? queue.find((id) => id !== applicationId)
-      navigate(next ? routes.employerApplication(next) : queuePath, { replace: true })
+      navigate(next ? routes.employerApplication(vacancyId, next) : queuePath, { replace: true })
     } catch {
       setError('Не удалось отклонить. Попробуйте еще раз.')
     } finally {
@@ -84,7 +90,7 @@ export function CandidateCardPage() {
       <article className="candidateCard__card">
         <div className="candidateCard__photo photoSlot photoSlot--dark">
           <div className="candidateCard__photoText">
-            <h1 className="candidateCard__name">{candidateLabel(applicationId)}</h1>
+            <h1 className="candidateCard__name">{candidateLabel(items, applicationId)}</h1>
             <span className="candidateCard__role">{candidate.desired_role ?? vacancy.title}</span>
           </div>
         </div>
@@ -149,7 +155,7 @@ export function CandidateCardPage() {
         <div className="candidateCard__decided">
           <p>{DECIDED_TEXT[candidate.status] ?? 'Решение уже принято'}</p>
           {interviewId !== null ? (
-            <Link to={routes.employerInterview(interviewId)} className="screenButton screenButton--primary">
+            <Link to={routes.employerInterview(vacancyId, interviewId)} className="screenButton screenButton--primary">
               Детали интервью
             </Link>
           ) : (
@@ -182,7 +188,7 @@ export function CandidateCardPage() {
             </span>
             В резерв
           </button>
-          <Link to={routes.employerApplicationInvite(applicationId)} className="candidateCard__invite">
+          <Link to={routes.employerApplicationInvite(vacancyId, applicationId)} className="candidateCard__invite">
             <SendIcon size={26} />
             Пригласить
           </Link>

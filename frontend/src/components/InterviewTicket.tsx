@@ -2,12 +2,12 @@ import type { ReactNode } from 'react'
 
 import { CheckIcon, MaxChatIcon, PinIcon } from '@/components/icons'
 import { formatDayMonth, formatTime } from '@/lib/format'
+import { CoverImage } from '@/components/CoverImage'
 import './InterviewTicket.css'
 
 /**
  * Синяя карточка назначенного интервью — общая для C10 (кандидат) и E10
- * (работодатель). Справа в макете фото заведения; картинка будет добавлена
- * отдельно, до этого карточка остаётся чисто синей.
+ * (работодатель). Справа — фото вакансии, растворяющееся в синем фоне.
  */
 export function InterviewTicket({
   startsAt,
@@ -17,6 +17,7 @@ export function InterviewTicket({
   person,
   place,
   checkInBadge = false,
+  imageUrl,
 }: {
   startsAt: string
   heading: string
@@ -25,9 +26,15 @@ export function InterviewTicket({
   person?: ReactNode
   place: ReactNode
   checkInBadge?: boolean
+  imageUrl?: string | null
 }) {
   return (
     <article className="interviewTicket">
+      {imageUrl ? (
+        <span className="interviewTicket__photo photoSlot" aria-hidden="true">
+          <CoverImage url={imageUrl} />
+        </span>
+      ) : null}
       <span className="interviewTicket__badge">
         {checkInBadge ? (
           <span className="interviewTicket__badgeIcon">

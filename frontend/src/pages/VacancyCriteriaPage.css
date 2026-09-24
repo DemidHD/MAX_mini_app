@@ -144,3 +144,18 @@
 .vacancyCriteria__next:active {
   transform: scale(0.99);
 }
+
+.vacancyCriteria__error {
+  display: block;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #fff1f0;
+  color: #c4291c;
+  font-size: 14px;
+}
+
+.vacancyCriteria__next:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

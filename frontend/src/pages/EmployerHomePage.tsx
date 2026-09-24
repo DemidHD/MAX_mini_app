@@ -1,30 +1,45 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Avatar, Typography } from '@maxhub/max-ui'
 
 import { routes } from '@/app/routes'
 import { avatarUrl } from '@/api/users'
+import { getEmployerVacancies } from '@/api/hiring'
+import type { Page, Vacancy } from '@/api/hiring'
+import type { User } from '@/api/types'
+import { DRAFT_LIMIT } from '@/api/vacancies'
+import { CoverImage } from '@/components/CoverImage'
+import { TrashIcon } from '@/components/icons'
+import { DeleteDraftDialog, DraftLimitDialog } from '@/features/vacancyCreate/DeleteDraftDialog'
+import { useAsync } from '@/hooks/useAsync'
+import type { AsyncState } from '@/hooks/useAsync'
+import { formatSalaryRange, plural, scheduleLabel } from '@/lib/format'
 import { useAuth } from '@/auth/useAuth'
 import heroPhoto from '@/assets/employer-home-hero.webp'
 import './EmployerHomePage.css'
 
 /**
  * Главная работодателя (экран E01 в UX-карте, `current_step = employer_home`
- * в разделе 7 тех-доки).
- *
- * У backend пока нет эндпоинта списка вакансий работодателя (в тех-доке,
- * раздел 27, есть только `POST /vacancies`, `GET /vacancies/:id` и
- * `GET /vacancies/feed` — `GET /employer/vacancies` из UX-карты ещё не
- * реализован). Блок «Мои вакансии» поэтому показывает честный пустой
- * экран, а не выдуманные карточки: у любого нового работодателя вакансий
- * действительно пока нет. Как только эндпоинт появится на backend, здесь
- * нужно будет заменить пустое состояние на реальный список.
+ * в разделе 7 тех-доки). Список «Мои вакансии» — `GET /employer/vacancies`,
+ * черновики в нём можно продолжить или удалить. Новых черновиков не больше
+ * `DRAFT_LIMIT`: лимит проверяет backend, главная заранее объясняет его.
  */
 export function EmployerHomePage() {
   const { state } = useAuth()
   if (state.status !== 'authenticated') {
     return null
   }
-  const { user } = state
+  return <EmployerHome user={state.user} />
+}
+
+type Dialog = { kind: 'limit' } | { kind: 'delete'; vacancy: Vacancy } | null
+
+function EmployerHome({ user }: { user: User }) {
+  const { state: vacancies, reload } = useAsync((signal) => getEmployerVacancies(signal, 50), [])
+  const [dialog, setDialog] = useState<Dialog>(null)
+  const draftsCount =
+    vacancies.status === 'success' ? vacancies.data.items.filter((item) => item.status === 'draft').length : 0
+  const limitReached = draftsCount >= DRAFT_LIMIT
 
   return (
     <div className="employerHome">
@@ -73,9 +88,15 @@ export function EmployerHomePage() {
             за пару минут
           </Typography.Body>
 
-          <Link to={routes.employerVacancyCreate} className="employerHero__cta">
-            Создать вакансию
-          </Link>
+          {limitReached ? (
+            <button type="button" className="employerHero__cta" onClick={() => setDialog({ kind: 'limit' })}>
+              Создать вакансию
+            </button>
+          ) : (
+            <Link to={routes.employerVacancyCreate} state={{ fresh: true }} className="employerHero__cta">
+              Создать вакансию
+            </Link>
+          )}
         </div>
       </section>
 
@@ -88,13 +109,29 @@ export function EmployerHomePage() {
           </Link>
         </div>
 
-        <div className="employerVacancies__empty">
-          <Typography.Body className="employerVacancies__emptyTitle">Пока нет вакансий</Typography.Body>
-          <Typography.Body className="employerVacancies__emptyText">
-            Создайте первую — она появится здесь
+        {draftsCount > 0 ? (
+          <Typography.Body
+            className={`employerVacancies__drafts${limitReached ? ' employerVacancies__drafts--full' : ''}`}
+          >
+            Черновиков: {draftsCount} из {DRAFT_LIMIT}
           </Typography.Body>
-        </div>
+        ) : null}
+
+        <MyVacancies state={vacancies} reload={reload} onDelete={(vacancy) => setDialog({ kind: 'delete', vacancy })} />
       </section>
+
+      {dialog?.kind === 'limit' ? <DraftLimitDialog limit={DRAFT_LIMIT} onClose={() => setDialog(null)} /> : null}
+      {dialog?.kind === 'delete' ? (
+        <DeleteDraftDialog
+          vacancyId={dialog.vacancy.id}
+          title={dialog.vacancy.title}
+          onClose={() => setDialog(null)}
+          onDeleted={() => {
+            setDialog(null)
+            reload()
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -133,5 +170,95 @@ function ChevronIcon() {
         strokeLinejoin="round"
       />
     </svg>
+  )
+}
+
+function MyVacancies({
+  state,
+  reload,
+  onDelete,
+}: {
+  state: AsyncState<Page<Vacancy>>
+  reload: () => void
+  onDelete: (vacancy: Vacancy) => void
+}) {
+  if (state.status === 'loading') {
+    return <div className="employerVacancies__skeleton" aria-label="Загрузка" />
+  }
+  if (state.status === 'error') {
+    return (
+      <div className="employerVacancies__empty">
+        <Typography.Body className="employerVacancies__emptyTitle">Не удалось загрузить вакансии</Typography.Body>
+        <button type="button" className="employerVacancies__retry" onClick={reload}>
+          Повторить
+        </button>
+      </div>
+    )
+  }
+  if (state.data.items.length === 0) {
+    return (
+      <div className="employerVacancies__empty">
+        <Typography.Body className="employerVacancies__emptyTitle">Пока нет вакансий</Typography.Body>
+        <Typography.Body className="employerVacancies__emptyText">Создайте первую — она появится здесь</Typography.Body>
+      </div>
+    )
+  }
+  return (
+    <div className="employerVacancies__track">
+      {state.data.items.map((vacancy) => (
+        <VacancyCard key={vacancy.id} vacancy={vacancy} onDelete={() => onDelete(vacancy)} />
+      ))}
+    </div>
+  )
+}
+
+const STATUS_LABELS: Record<Vacancy['status'], string> = {
+  published: 'Опубликована',
+  draft: 'Черновик',
+  closed: 'Закрыта',
+}
+
+/**
+ * Карточка вакансии в ленте «Мои вакансии» с фото вакансии. Опубликованная
+ * ведёт к кандидатам, черновик — в форму создания.
+ */
+function VacancyCard({ vacancy, onDelete }: { vacancy: Vacancy; onDelete: () => void }) {
+  const count = vacancy.applications_count ?? 0
+  const isDraft = vacancy.status === 'draft'
+  const meta = [vacancy.location, vacancy.schedule ? scheduleLabel(vacancy.schedule) : null].filter(Boolean).join(' · ')
+  const to = isDraft ? routes.employerVacancyEdit(vacancy.id) : routes.employerVacancyCandidates(vacancy.id)
+
+  return (
+    <div className={`vacancyTile photoSlot photoSlot--dark photoSlot--shade${isDraft ? ' vacancyTile--draft' : ''}`}>
+      <CoverImage url={vacancy.image_url} />
+      {/* Ссылка растянута на всю карточку, кнопка удаления лежит поверх неё:
+          вложить кнопку в <a> нельзя. */}
+      <Link
+        to={to}
+        className="vacancyTile__link"
+        aria-label={isDraft ? `Продолжить черновик «${vacancy.title}»` : `Кандидаты вакансии «${vacancy.title}»`}
+      />
+      {isDraft ? (
+        <button type="button" className="vacancyTile__delete" aria-label="Удалить черновик" onClick={onDelete}>
+          <TrashIcon size={18} />
+        </button>
+      ) : null}
+      {vacancy.company_name ? <span className="vacancyTile__company">{vacancy.company_name}</span> : null}
+      <span className="vacancyTile__title">{vacancy.title}</span>
+      <span className="vacancyTile__salary">{formatSalaryRange(vacancy.salary_min, vacancy.salary_max)}</span>
+      {meta ? <span className="vacancyTile__meta">{meta}</span> : null}
+      <span className="vacancyTile__badges">
+        <span className={`vacancyTile__status vacancyTile__status--${vacancy.status}`}>
+          <i aria-hidden="true" />
+          {STATUS_LABELS[vacancy.status]}
+        </span>
+        {count > 0 ? (
+          <span className="vacancyTile__count">
+            {count} {plural(count, 'отклик', 'отклика', 'откликов')}
+          </span>
+        ) : null}
+        {isDraft ? <span className="vacancyTile__continue">Продолжить</span> : null}
+      </span>
+    </div>
   )
 }

@@ -21,6 +21,16 @@
   box-shadow: 0 18px 40px rgba(0, 110, 255, 0.2);
 }
 
+.errorScreen__artImage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 119%;
+  max-width: none;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
 .errorScreen__back {
   margin-top: 12px;
 }

@@ -20,30 +20,36 @@ export const routes = {
     `/candidate/applications/${applicationId}/start`,
   candidateScreening: (applicationId: Id = ':applicationId') =>
     `/candidate/applications/${applicationId}/screening`,
-  candidateMatch: (matchId: Id = ':matchId') => `/candidate/matches/${matchId}`,
-  candidateMatchSlots: (matchId: Id = ':matchId') => `/candidate/matches/${matchId}/slots`,
-  candidateInterview: (interviewId: Id = ':interviewId') => `/candidate/interviews/${interviewId}`,
+  // Отдельного `GET /matches/{id}` у backend нет: взаимный интерес, слоты и
+  // интервью кандидат получает по вакансии (`GET /vacancies/{id}/slots`).
+  candidateMatch: (vacancyId: Id = ':vacancyId') => `/candidate/vacancies/${vacancyId}/match`,
+  candidateMatchSlots: (vacancyId: Id = ':vacancyId') => `/candidate/vacancies/${vacancyId}/slots`,
+  candidateInterview: (vacancyId: Id = ':vacancyId') => `/candidate/vacancies/${vacancyId}/interview`,
   employerHome: '/employer',
   employerVacancyCreate: '/employer/vacancies/new',
   employerVacancyCriteria: '/employer/vacancies/new/criteria',
   employerVacancyPreview: '/employer/vacancies/new/preview',
   employerVacancyPublished: '/employer/vacancies/new/published',
+  employerVacancyEdit: (vacancyId: Id = ':vacancyId') => `/employer/vacancies/${vacancyId}/edit`,
   employerVacancyList: '/employer/vacancies',
   employerVacancySlots: (vacancyId: Id = ':vacancyId') => `/employer/vacancies/${vacancyId}/slots`,
   employerCandidates: '/employer/candidates',
   employerVacancyCandidates: (vacancyId: Id = ':vacancyId') => `/employer/candidates/${vacancyId}`,
-  employerApplication: (applicationId: Id = ':applicationId') => `/employer/applications/${applicationId}`,
-  employerApplicationInvite: (applicationId: Id = ':applicationId') =>
-    `/employer/applications/${applicationId}/invite`,
-  employerInterview: (interviewId: Id = ':interviewId') => `/employer/interviews/${interviewId}`,
-  devScreens: '/dev/screens',
+  // Отдельного чтения одного отклика у backend нет: карточка берётся из
+  // списка кандидатов вакансии, поэтому в пути есть и вакансия.
+  employerApplication: (vacancyId: Id = ':vacancyId', applicationId: Id = ':applicationId') =>
+    `/employer/candidates/${vacancyId}/${applicationId}`,
+  employerApplicationInvite: (vacancyId: Id = ':vacancyId', applicationId: Id = ':applicationId') =>
+    `/employer/candidates/${vacancyId}/${applicationId}/invite`,
+  employerInterview: (vacancyId: Id = ':vacancyId', interviewId: Id = ':interviewId') =>
+    `/employer/vacancies/${vacancyId}/interviews/${interviewId}`,
 } as const
 
 /**
  * Путь для текущего шага сценария (раздел 7 тех-доки). Единственное место,
  * которое переводит `current_step` backend в маршрут frontend.
  */
-export function pathForStep(step: CurrentStep, applicationId: number | null): string {
+export function pathForStep(step: CurrentStep, applicationId: number | null, vacancyId: number | null = null): string {
   switch (step) {
     case 'role_selection':
       return routes.roleSelection
@@ -54,7 +60,7 @@ export function pathForStep(step: CurrentStep, applicationId: number | null): st
     case 'application_status':
       return applicationId !== null ? routes.candidateApplication(applicationId) : routes.candidateFeed
     case 'vacancy_create':
-      return routes.employerVacancyCreate
+      return vacancyId !== null ? routes.employerVacancyEdit(vacancyId) : routes.employerVacancyCreate
     case 'employer_home':
       return routes.employerHome
   }

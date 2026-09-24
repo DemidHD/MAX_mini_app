@@ -1,20 +1,64 @@
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Typography } from '@maxhub/max-ui'
 import type { ReactNode } from 'react'
 
 import { routes } from '@/app/routes'
+import { DRAFT_LIMIT, isDraftLimitError } from '@/api/vacancies'
+import { DeleteDraftDialog, DraftLimitDialog } from '@/features/vacancyCreate/DeleteDraftDialog'
 import { useVacancyDraft } from '@/features/vacancyCreate/useVacancyDraft'
 import { VacancyStepHeader } from '@/features/vacancyCreate/VacancyStepHeader'
-import { AVAILABLE_FROM_OPTIONS, EXPERIENCE_OPTIONS, SCHEDULE_OPTIONS, isBasicsComplete } from '@/features/vacancyCreate/draft'
+import {
+  AVAILABLE_FROM_OPTIONS,
+  COMPANY_NAME_MAX_LENGTH,
+  DESCRIPTION_MAX_LENGTH,
+  EXPERIENCE_OPTIONS,
+  SCHEDULE_OPTIONS,
+  isBasicsComplete,
+} from '@/features/vacancyCreate/draft'
 import decorPhoto from '@/assets/vacancy-basics-decor.webp'
 import './VacancyBasicsPage.css'
 
-/** Шаг 1 создания вакансии — экран E02 «Кого вы ищете?» в UX-карте. */
+/**
+ * Шаг 1 создания вакансии — экран E02 «Кого вы ищете?» в UX-карте.
+ * «Далее» сохраняет черновик на сервере (первый раз — создаёт его).
+ */
 export function VacancyBasicsPage() {
-  const { draft, updateDraft } = useVacancyDraft()
+  const { draft, updateDraft, saveDraft, startNew } = useVacancyDraft()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [dialog, setDialog] = useState<'delete' | 'limit' | null>(null)
+
+  // «Создать вакансию» на главной открывает форму с `fresh`: если в форме
+  // был открыт серверный черновик, начинаем новую вакансию, а не правим его.
+  // Несохранённый ввод без черновика оставляем — это та же новая вакансия.
+  const fresh = (location.state as { fresh?: boolean } | null)?.fresh === true
+  useEffect(() => {
+    if (!fresh) return
+    if (draft.vacancyId !== null) startNew()
+    navigate(location.pathname, { replace: true, state: null })
+  }, [fresh, draft.vacancyId, startNew, navigate, location.pathname])
 
   const canContinue = isBasicsComplete(draft)
+
+  async function handleNext() {
+    setSaving(true)
+    setError(null)
+    try {
+      await saveDraft()
+      navigate(routes.employerVacancyCriteria)
+    } catch (cause) {
+      if (draft.vacancyId === null && isDraftLimitError(cause)) {
+        setDialog('limit')
+      } else {
+        setError('Не удалось сохранить черновик. Введённые данные на месте — попробуйте еще раз.')
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="vacancyBasics">
@@ -35,6 +79,14 @@ export function VacancyBasicsPage() {
           value={draft.title}
           placeholder="Например, бариста"
           onChange={(value) => updateDraft({ title: value })}
+        />
+
+        <VacancyTextField
+          label="Название заведения"
+          value={draft.companyName}
+          placeholder="Например, Кофейня Mokka"
+          maxLength={COMPANY_NAME_MAX_LENGTH}
+          onChange={(value) => updateDraft({ companyName: value })}
         />
 
         <div className="vacancyBasics__row">
@@ -85,18 +137,81 @@ export function VacancyBasicsPage() {
           />
         </div>
 
+        <VacancyTextArea
+          label="Описание вакансии"
+          value={draft.description}
+          placeholder="Чем предстоит заниматься, что вы предлагаете"
+          maxLength={DESCRIPTION_MAX_LENGTH}
+          onChange={(value) => updateDraft({ description: value })}
+        />
+
         <Typography.Body className="vacancyBasics__autosave">Черновик сохраняется автоматически</Typography.Body>
+
+        {error ? <Typography.Body className="vacancyBasics__error">{error}</Typography.Body> : null}
 
         <button
           type="button"
           className="vacancyBasics__next"
-          disabled={!canContinue}
-          onClick={() => navigate(routes.employerVacancyCriteria)}
+          disabled={!canContinue || saving}
+          onClick={() => void handleNext()}
         >
-          Далее
+          {saving ? 'Сохраняем…' : 'Далее'}
         </button>
+
+        {draft.vacancyId !== null ? (
+          <button type="button" className="vacancyBasics__delete" disabled={saving} onClick={() => setDialog('delete')}>
+            Удалить черновик
+          </button>
+        ) : null}
       </div>
+
+      {dialog === 'delete' && draft.vacancyId !== null ? (
+        <DeleteDraftDialog
+          vacancyId={draft.vacancyId}
+          title={draft.title}
+          onClose={() => setDialog(null)}
+          onDeleted={() => {
+            startNew()
+            navigate(routes.employerHome, { replace: true })
+          }}
+        />
+      ) : null}
+      {dialog === 'limit' ? <DraftLimitDialog limit={DRAFT_LIMIT} onClose={() => setDialog(null)} /> : null}
     </div>
+  )
+}
+
+/** Многострочное поле в стиле остальных карточек формы. */
+function VacancyTextArea({
+  label,
+  value,
+  placeholder,
+  maxLength,
+  onChange,
+}: {
+  label: string
+  value: string
+  placeholder: string
+  maxLength: number
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="vacancyField vacancyField--area">
+      <span className="vacancyField__labelRow">
+        <span className="vacancyField__label">{label}</span>
+        <span className="vacancyField__counter">
+          {value.length}/{maxLength}
+        </span>
+      </span>
+      <textarea
+        className="vacancyField__textarea"
+        value={value}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        rows={3}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
   )
 }
 
@@ -105,12 +220,14 @@ function VacancyTextField({
   value,
   placeholder,
   type = 'text',
+  maxLength,
   onChange,
 }: {
   label: string
   value: string
   placeholder: string
   type?: 'text' | 'number'
+  maxLength?: number
   onChange: (value: string) => void
 }) {
   return (
@@ -124,6 +241,8 @@ function VacancyTextField({
           min={type === 'number' ? 0 : undefined}
           value={value}
           placeholder={placeholder}
+          maxLength={maxLength}
+          aria-label={label}
           onChange={(event) => onChange(event.target.value)}
         />
         {value ? (

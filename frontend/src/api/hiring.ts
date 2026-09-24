@@ -1,10 +1,9 @@
+import { ApiError, api } from '@/api/client'
+
 /**
- * Типы сценария найма: вакансии, отклики, первичный отбор, решения, слоты,
- * интервью. Поля и статусы — по тех-доке (разделы 15–23, 26) и
- * `docs/api-contracts.md`.
- *
- * Экраны пока не подключены к backend (см. `mocks/demoApi.ts`), но работают
- * с этими формами данных, чтобы подключение свелось к замене источника.
+ * Сценарий найма: вакансии, отклики, первичный отбор, решения, слоты,
+ * интервью. Поля и статусы — тех-дока (разделы 15–23, 26), формы запросов и
+ * ответов — `docs/api-contracts.md`.
  */
 
 /** Раздел 17 тех-доки. `reserved` появится вместе с P1. */
@@ -24,28 +23,58 @@ export type ApplicationStatus =
 export type CriterionType = 'location' | 'schedule' | 'salary' | 'available_from' | 'experience' | 'certificate'
 
 export interface VacancyCriterion {
+  id?: number
   type: CriterionType
   required: boolean
-  /** Формат — `docs/api-contracts.md`, «Формат vacancy_criteria.value». */
+  /** Формат — `api-contracts.md`, «Формат vacancy_criteria.value». */
   value: Record<string, unknown>
+  weight?: string | null
 }
 
-export interface Vacancy {
+export type ScreeningQuestionType = 'text' | 'number' | 'boolean' | 'choice'
+
+export interface VacancyQuestion {
+  id: number
+  question: string
+  type: ScreeningQuestionType
+  required: boolean
+  sort_order: number
+  validation_rules: Record<string, unknown> | null
+}
+
+/** Общая часть вакансии: её отдают и лента, и `GET /vacancies/{id}`. */
+export interface VacancySummary {
   id: number
   title: string
   location: string | null
   salary_min: string | null
   salary_max: string | null
   schedule: string | null
-  status: 'draft' | 'published' | 'closed'
   criteria: VacancyCriterion[]
-  /**
-   * Название заведения и описание есть в макетах (C02, C03, C07, M01), но
-   * в таблице `vacancies` (раздел 15 тех-доки) таких полей нет — вопрос к
-   * продуктовой команде. Пока поля необязательные: без них экраны не ломаются.
-   */
+  /** Фото по теме вакансии: backend подбирает его сам (Openverse), может не найтись. */
+  image_url?: string | null
+  /** Есть в `GET /vacancies/{id}` и списке работодателя; лента их не отдаёт. */
   company_name?: string | null
   description?: string | null
+}
+
+/** `GET /api/vacancies/{id}`. */
+export interface Vacancy extends VacancySummary {
+  employer_id: number
+  status: 'draft' | 'published' | 'closed'
+  public_token: string | null
+  public_url: string | null
+  applications_count: number | null
+  questions: VacancyQuestion[]
+  created_at: string
+  updated_at: string
+}
+
+export interface Page<T> {
+  items: T[]
+  limit: number
+  offset: number
+  total: number
 }
 
 export interface ApplicationSummary {
@@ -54,8 +83,6 @@ export interface ApplicationSummary {
   status: ApplicationStatus
   created_at: string
 }
-
-export type ScreeningQuestionType = 'text' | 'number' | 'boolean' | 'choice'
 
 export interface ScreeningQuestion {
   id: number
@@ -95,15 +122,6 @@ export interface ScreeningResult {
   failed_questions: number[]
 }
 
-/** Отклик глазами кандидата: статус + вакансия (экраны C06/C07). */
-export interface CandidateApplication extends ApplicationSummary {
-  vacancy: Vacancy
-  failed_criteria: CriterionType[]
-  /** Есть после взаимного интереса / бронирования — для перехода в M01 / C10. */
-  match_id: number | null
-  interview_id: number | null
-}
-
 /** Элемент `GET /api/employer/vacancies/{id}/candidates`. */
 export interface EmployerCandidate {
   application_id: number
@@ -124,6 +142,16 @@ export interface EmployerCandidate {
   hard_filters: { type: CriterionType; required: boolean; passed: boolean | null }[]
 }
 
+/** `POST /api/applications/{id}/decision`. */
+export interface DecisionResult {
+  application_id: number
+  status: ApplicationStatus
+  action: 'invited' | 'rejected'
+  reject_reason: string | null
+  match_id: number | null
+  decided_at: string
+}
+
 /** Раздел 22 тех-доки. */
 export interface InterviewSlot {
   id: number
@@ -133,24 +161,114 @@ export interface InterviewSlot {
   status: 'available' | 'booked' | 'cancelled'
 }
 
-/** Раздел 21 тех-доки + вакансия для экрана M01. */
-export interface Match {
-  id: number
-  application_id: number
-  vacancy: Vacancy
-  created_at: string
-}
-
-/** Раздел 23 тех-доки + данные для экранов C10/E10. */
+/** Раздел 23 тех-доки, формат элемента `interviews` из `GET .../slots`. */
 export interface Interview {
   id: number
   match_id: number
-  slot_id: number
-  status: 'scheduled' | 'completed' | 'cancelled' | 'no_show'
-  starts_at: string
-  ends_at: string
-  vacancy: Vacancy
   application_id: number
-  /** Удалось ли отправить уведомление в MAX (раздел 48, `notification_sent`). */
-  notification_sent: boolean
+  vacancy_id: number
+  slot: InterviewSlot
+  status: 'scheduled' | 'completed' | 'cancelled' | 'no_show'
+  application_status: ApplicationStatus
+  created_at: string
+}
+
+/** `GET /api/vacancies/{id}/slots`: состав зависит от роли. */
+export interface SlotsResponse {
+  vacancy_id: number
+  items: InterviewSlot[]
+  /** Кандидату — с чем идти в `POST /matches/{id}/book`; работодателю `null`. */
+  match_id: number | null
+  interviews: Interview[]
+}
+
+export interface CandidateProfile {
+  desired_role: string
+  city: string | null
+  salary: string | null
+  schedule: string | null
+  experience_months: number | null
+  available_from: string | null
+}
+
+// ------------------------------------------------------------- кандидат
+
+/** `GET /api/candidate/profile`; профиля ещё нет — `null` (404 — нормальное состояние). */
+export async function getCandidateProfile(signal?: AbortSignal): Promise<CandidateProfile | null> {
+  try {
+    return await api.get<CandidateProfile>('/candidate/profile', signal)
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'candidate_profile_not_found') return null
+    throw error
+  }
+}
+
+export function updateCandidateProfile(profile: Partial<CandidateProfile>, signal?: AbortSignal) {
+  return api.patch<CandidateProfile>('/candidate/profile', profile, signal)
+}
+
+export function getFeed(signal?: AbortSignal, limit = 20, offset = 0) {
+  return api.get<Page<VacancySummary>>(`/vacancies/feed?limit=${limit}&offset=${offset}`, signal)
+}
+
+export function getVacancy(id: number, signal?: AbortSignal) {
+  return api.get<Vacancy>(`/vacancies/${id}`, signal)
+}
+
+/** Повторный вызов возвращает существующий отклик (раздел 57). */
+export function applyToVacancy(vacancyId: number, signal?: AbortSignal) {
+  return api.post<ApplicationSummary>(`/vacancies/${vacancyId}/apply`, undefined, signal)
+}
+
+export function getScreening(applicationId: number, signal?: AbortSignal) {
+  return api.get<ScreeningState>(`/applications/${applicationId}/screening`, signal)
+}
+
+export function submitScreening(applicationId: number, answers: ScreeningAnswer[], signal?: AbortSignal) {
+  return api.post<ScreeningResult>(`/applications/${applicationId}/screening`, { answers }, signal)
+}
+
+/** `POST /api/matches/{id}/book`; занятый слот — `409 slot_taken`. */
+export function bookSlot(matchId: number, slotId: number, signal?: AbortSignal) {
+  return api.post<Interview>(`/matches/${matchId}/book`, { slot_id: slotId }, signal)
+}
+
+// ---------------------------------------------------------- работодатель
+
+export function getEmployerVacancies(signal?: AbortSignal, limit = 20, offset = 0) {
+  return api.get<Page<Vacancy>>(`/employer/vacancies?limit=${limit}&offset=${offset}`, signal)
+}
+
+export function getVacancyCandidates(vacancyId: number, signal?: AbortSignal) {
+  return api.get<Page<EmployerCandidate>>(`/employer/vacancies/${vacancyId}/candidates?limit=50`, signal)
+}
+
+/** Приглашение сразу создаёт взаимный интерес и возвращает `match_id`. */
+export function decide(applicationId: number, action: 'invited' | 'rejected', signal?: AbortSignal) {
+  return api.post<DecisionResult>(`/applications/${applicationId}/decision`, { action }, signal)
+}
+
+export function getSlots(vacancyId: number, signal?: AbortSignal) {
+  return api.get<SlotsResponse>(`/vacancies/${vacancyId}/slots`, signal)
+}
+
+/** Один запрос — один слот; время только со смещением (api-contracts). */
+export function createSlot(vacancyId: number, slot: { starts_at: string; ends_at: string }, signal?: AbortSignal) {
+  return api.post<InterviewSlot>(`/vacancies/${vacancyId}/slots`, slot, signal)
+}
+
+export function cancelSlot(vacancyId: number, slotId: number, signal?: AbortSignal) {
+  return api.delete<void>(`/vacancies/${vacancyId}/slots/${slotId}`, signal)
+}
+
+// ------------------------------------------------------------- помощники
+
+/**
+ * «Кандидат 01» — порядковый номер отклика по времени поступления: имени и
+ * фото в карточке P0 нет (api-contracts, «GET .../candidates»).
+ */
+export function candidateLabel(items: EmployerCandidate[], applicationId: number): string {
+  const ordered = [...items].sort((a, b) => a.applied_at.localeCompare(b.applied_at))
+  const index = ordered.findIndex((item) => item.application_id === applicationId)
+  return index >= 0 ? `Кандидат ${String(index + 1).padStart(2, '0')}` : 'Кандидат'
 }

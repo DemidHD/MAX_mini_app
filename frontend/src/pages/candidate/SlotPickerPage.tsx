@@ -1,16 +1,17 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
 import { ApiError } from '@/api/client'
-import type { InterviewSlot, Match } from '@/api/hiring'
+import { bookSlot, getSlots, getVacancy } from '@/api/hiring'
+import type { InterviewSlot, Vacancy } from '@/api/hiring'
 import { BackButton } from '@/components/BackButton'
+import { CoverImage } from '@/components/CoverImage'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { LoadingScreen } from '@/components/LoadingScreen'
 import { CalendarIcon } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
 import { dayKey, formatDayMonth, formatTime, monthShort, weekdayShort } from '@/lib/format'
-import { bookSlot, getMatch, getSlots } from '@/mocks/demoApi'
 import './SlotPickerPage.css'
 
 /**
@@ -19,22 +20,33 @@ import './SlotPickerPage.css'
  * просмотром и подтверждением (409), список обновляется (раздел 37).
  */
 export function SlotPickerPage() {
-  const matchId = Number(useParams().matchId)
+  const vacancyId = Number(useParams().vacancyId)
   const navigate = useNavigate()
   const { state, reload } = useAsync(async (signal) => {
-    const match = await getMatch(matchId, signal)
-    const slots = await getSlots(match.vacancy.id, signal)
-    return { match, slots }
-  }, [matchId])
+    const [vacancy, slots] = await Promise.all([getVacancy(vacancyId, signal), getSlots(vacancyId, signal)])
+    return { vacancy, slots }
+  }, [vacancyId])
 
   if (state.status === 'loading') return <LoadingScreen />
   if (state.status === 'error') {
     return <ErrorScreen error={state.error} onRetry={reload} onBack={() => navigate(-1)} />
   }
-  return <SlotPicker match={state.data.match} initialSlots={state.data.slots} />
+  const { vacancy, slots } = state.data
+  // Интервью уже назначено — повторный выбор не нужен (перенос — P1).
+  if (slots.interviews.length > 0) return <Navigate to={routes.candidateInterview(vacancyId)} replace />
+  if (slots.match_id === null) return <Navigate to={routes.candidateFeed} replace />
+  return <SlotPicker vacancy={vacancy} matchId={slots.match_id} initialSlots={slots.items} />
 }
 
-function SlotPicker({ match, initialSlots }: { match: Match; initialSlots: InterviewSlot[] }) {
+function SlotPicker({
+  vacancy,
+  matchId,
+  initialSlots,
+}: {
+  vacancy: Vacancy
+  matchId: number
+  initialSlots: InterviewSlot[]
+}) {
   const navigate = useNavigate()
   const [slots, setSlots] = useState(initialSlots)
   const available = slots
@@ -49,19 +61,23 @@ function SlotPicker({ match, initialSlots }: { match: Match; initialSlots: Inter
   const activeDay = day && days.includes(day) ? day : (days[0] ?? null)
   const daySlots = available.filter((slot) => dayKey(slot.starts_at) === activeDay)
   const selected = available.find((slot) => slot.id === slotId) ?? null
-  const { vacancy } = match
 
   async function handleConfirm() {
     if (!selected) return
     setBooking(true)
     setError(null)
     try {
-      const interview = await bookSlot(match.id, selected.id)
-      navigate(routes.candidateInterview(interview.id), { replace: true })
+      await bookSlot(matchId, selected.id)
+      navigate(routes.candidateInterview(vacancy.id), { replace: true })
     } catch (cause) {
+      if (cause instanceof ApiError && cause.code === 'interview_already_scheduled') {
+        navigate(routes.candidateInterview(vacancy.id), { replace: true })
+        return
+      }
       if (cause instanceof ApiError && cause.status === 409) {
         setError('Это время только что заняли. Выберите другое — список обновлен.')
-        setSlots(await getSlots(vacancy.id).catch(() => slots))
+        const fresh = await getSlots(vacancy.id).catch(() => null)
+        if (fresh) setSlots(fresh.items)
       } else {
         setError('Не удалось подтвердить время. Попробуйте еще раз.')
       }
@@ -127,7 +143,9 @@ function SlotPicker({ match, initialSlots }: { match: Match; initialSlots: Inter
 
           {selected ? (
             <div className="slotPicker__summary">
-              <span className="slotPicker__thumb photoSlot" aria-hidden="true" />
+              <span className="slotPicker__thumb photoSlot" aria-hidden="true">
+                <CoverImage url={vacancy.image_url} />
+              </span>
               <span className="slotPicker__summaryText">
                 <span className="slotPicker__summaryDate">{formatDayMonth(selected.starts_at)}</span>
                 <span className="slotPicker__summaryTime">

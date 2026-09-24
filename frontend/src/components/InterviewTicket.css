@@ -1,5 +1,6 @@
 .interviewTicket {
   position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -148,4 +149,18 @@
 
 .maxNotice--card .maxNotice__text {
   font-size: 15px;
+}
+
+/* Фото вакансии справа; маска растворяет левый край в синем фоне карточки. */
+.interviewTicket__photo {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  width: 48%;
+  background: transparent;
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 55%);
+  mask-image: linear-gradient(to right, transparent 0%, #000 55%);
+  opacity: 0.9;
 }

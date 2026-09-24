@@ -30,5 +30,5 @@ export function RootRedirect() {
     )
   }
 
-  return <Navigate to={pathForStep(state.currentStep, state.applicationId)} replace />
+  return <Navigate to={pathForStep(state.currentStep, state.applicationId, state.vacancyId)} replace />
 }

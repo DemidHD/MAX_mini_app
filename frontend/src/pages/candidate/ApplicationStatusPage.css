@@ -81,6 +81,13 @@
   font-weight: 800;
 }
 
+.mismatchCard__title,
+.mismatchCard__reason,
+.mismatchCard__more {
+  position: relative;
+  z-index: 1;
+}
+
 .mismatchCard__title {
   margin-top: 20px;
   font-size: clamp(28px, 8.6vw, 34px);
@@ -89,9 +96,14 @@
   color: var(--screen-ink);
 }
 
+.mismatchCard__title--question {
+  font-size: clamp(22px, 6.4vw, 26px);
+  line-height: 1.15;
+}
+
 .mismatchCard__reason {
   margin-top: 10px;
-  font-size: 17px;
+  font-size: 16px;
   color: var(--screen-muted);
 }
 
@@ -103,10 +115,10 @@
 
 .mismatchCard__art {
   position: absolute;
-  right: 18px;
-  bottom: 22px;
-  width: 150px;
-  height: 145px;
+  right: 14px;
+  bottom: 4px;
+  width: 136px;
+  height: auto;
 }
 
 .applicationStatus__note {

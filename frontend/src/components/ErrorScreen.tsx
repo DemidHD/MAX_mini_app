@@ -1,4 +1,5 @@
 import { NetworkError } from '@/api/client'
+import errorIllustration from '@/assets/error-illustration.webp'
 import './ErrorScreen.css'
 
 /**
@@ -29,8 +30,10 @@ export function ErrorScreen({
       <h1 className="screen__title errorScreen__title">{title}</h1>
       <p className="screen__subtitle errorScreen__subtitle">{text}</p>
 
-      {/* Место под иллюстрацию из макета; картинка будет добавлена отдельно. */}
-      <div className="errorScreen__art" aria-hidden="true" />
+      {/* Карточки иллюстрации шире синей панели и выходят за её края, как в макете. */}
+      <div className="errorScreen__art" aria-hidden="true">
+        <img className="errorScreen__artImage" src={errorIllustration} alt="" />
+      </div>
 
       <div className="screen__spacer" />
 

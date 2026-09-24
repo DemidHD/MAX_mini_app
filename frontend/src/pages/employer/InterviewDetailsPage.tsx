@@ -1,31 +1,42 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
+import { ApiError } from '@/api/client'
+import { candidateLabel, getSlots, getVacancy, getVacancyCandidates } from '@/api/hiring'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { InterviewTicket, MaxNotice } from '@/components/InterviewTicket'
 import { LoadingScreen } from '@/components/LoadingScreen'
 import { AccentMarks } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
-import { candidateLabel, getInterview } from '@/mocks/demoApi'
 import './InterviewDetailsPage.css'
 
 /**
  * E10 «Детали интервью»: итог маршрута работодателя — когда и с кем.
- * Ошибка уведомления в MAX интервью не отменяет (раздел 83), поэтому строка
- * об уведомлении честно показывает, дошло ли оно.
+ * Собеседования работодателя по вакансии приходят в `interviews` ответа
+ * `GET /vacancies/{id}/slots`.
  */
 export function InterviewDetailsPage() {
-  const interviewId = Number(useParams().interviewId)
+  const params = useParams()
+  const vacancyId = Number(params.vacancyId)
+  const interviewId = Number(params.interviewId)
   const navigate = useNavigate()
-  const { state, reload } = useAsync((signal) => getInterview(interviewId, signal), [interviewId])
+  const { state, reload } = useAsync(async (signal) => {
+    const [vacancy, slots, candidates] = await Promise.all([
+      getVacancy(vacancyId, signal),
+      getSlots(vacancyId, signal),
+      getVacancyCandidates(vacancyId, signal),
+    ])
+    const interview = slots.interviews.find((item) => item.id === interviewId)
+    if (!interview) throw new ApiError(404, { code: 'interview_not_found', message: 'Интервью не найдено' })
+    return { vacancy, interview, candidates: candidates.items }
+  }, [vacancyId, interviewId])
 
   if (state.status === 'loading') return <LoadingScreen />
   if (state.status === 'error') {
     return <ErrorScreen error={state.error} onRetry={reload} onBack={() => navigate(routes.employerHome)} />
   }
 
-  const interview = state.data
-  const { vacancy } = interview
+  const { vacancy, interview, candidates } = state.data
 
   return (
     <div className="screen interviewDetails">
@@ -37,12 +48,13 @@ export function InterviewDetailsPage() {
 
       <InterviewTicket
         checkInBadge
-        startsAt={interview.starts_at}
+        imageUrl={vacancy.image_url}
+        startsAt={interview.slot.starts_at}
         heading={vacancy.title}
         person={
           <>
             <span className="interviewDetails__avatar photoSlot" aria-hidden="true" />
-            {candidateLabel(interview.application_id)}
+            {candidateLabel(candidates, interview.application_id)}
           </>
         }
         place={
@@ -54,9 +66,9 @@ export function InterviewDetailsPage() {
       />
 
       <MaxNotice>
-        {interview.notification_sent
-          ? 'Кандидат получил уведомление в MAX'
-          : 'Уведомление в MAX не дошло, но интервью назначено'}
+        {/* Доставку уведомления backend фронту не сообщает (раздел 48 —
+            журнал на сервере), поэтому формулировка без «уже получил». */}
+        Кандидату придет уведомление в MAX
       </MaxNotice>
 
       <div className="screen__spacer" />

@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
+import { ApiError } from '@/api/client'
+import { cancelSlot, createSlot, getSlots } from '@/api/hiring'
 import type { InterviewSlot } from '@/api/hiring'
 import { BackButton } from '@/components/BackButton'
 import { ErrorScreen } from '@/components/ErrorScreen'
@@ -9,7 +11,6 @@ import { LoadingScreen } from '@/components/LoadingScreen'
 import { CalendarIcon, CloseIcon, MinusIcon, PlusIcon } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
 import { dayKey, formatDayMonth, formatDayMonthShort, formatTime } from '@/lib/format'
-import { getSlots, saveSlots } from '@/mocks/demoApi'
 import './InterviewSlotsPage.css'
 
 const MIN_SLOTS = 2
@@ -23,6 +24,8 @@ const TIME_OPTIONS = Array.from({ length: 25 }, (_, index) => {
 
 interface DraftSlot {
   key: string
+  /** `null` — новый интервал, ещё не сохранённый на сервере. */
+  id: number | null
   starts_at: string
   ends_at: string
   booked: boolean
@@ -41,11 +44,17 @@ export function InterviewSlotsPage() {
   if (state.status === 'error') {
     return <ErrorScreen error={state.error} onRetry={reload} onBack={() => navigate(-1)} />
   }
-  return <SlotsEditor vacancyId={vacancyId} initial={state.data} />
+  return <SlotsEditor vacancyId={vacancyId} initial={state.data.items} />
 }
 
 function toDraft(slot: InterviewSlot): DraftSlot {
-  return { key: String(slot.id), starts_at: slot.starts_at, ends_at: slot.ends_at, booked: slot.status === 'booked' }
+  return {
+    key: String(slot.id),
+    id: slot.id,
+    starts_at: slot.starts_at,
+    ends_at: slot.ends_at,
+    booked: slot.status === 'booked',
+  }
 }
 
 function SlotsEditor({ vacancyId, initial }: { vacancyId: number; initial: InterviewSlot[] }) {
@@ -70,7 +79,7 @@ function SlotsEditor({ vacancyId, initial }: { vacancyId: number; initial: Inter
     const ends = new Date(starts.getTime() + SLOT_MINUTES * 60_000)
     setSlots((previous) => [
       ...previous,
-      { key: `new-${starts.getTime()}`, starts_at: starts.toISOString(), ends_at: ends.toISOString(), booked: false },
+      { key: `new-${starts.getTime()}`, id: null, starts_at: starts.toISOString(), ends_at: ends.toISOString(), booked: false },
     ])
     setPicking(false)
     setError(null)
@@ -84,13 +93,20 @@ function SlotsEditor({ vacancyId, initial }: { vacancyId: number; initial: Inter
     setSaving(true)
     setError(null)
     try {
-      await saveSlots(
-        vacancyId,
-        slots.map(({ starts_at, ends_at }) => ({ starts_at, ends_at })),
-      )
+      // Пакетного сохранения у backend нет: убранные интервалы отменяются, новые
+      // создаются по одному (api-contracts, «POST/DELETE .../slots»). Успешно
+      // созданные сразу получают id, поэтому повтор после ошибки их не дублирует.
+      const keptIds = new Set(slots.map((slot) => slot.id))
+      for (const slot of initial) {
+        if (slot.status === 'available' && !keptIds.has(slot.id)) await cancelSlot(vacancyId, slot.id)
+      }
+      for (const slot of slots.filter((item) => item.id === null)) {
+        const created = await createSlot(vacancyId, { starts_at: slot.starts_at, ends_at: slot.ends_at })
+        setSlots((previous) => previous.map((item) => (item.key === slot.key ? { ...item, id: created.id } : item)))
+      }
       navigate(routes.employerVacancyCandidates(vacancyId))
-    } catch {
-      setError('Не удалось сохранить. Интервалы на месте — попробуйте еще раз.')
+    } catch (cause) {
+      setError(slotErrorMessage(cause))
     } finally {
       setSaving(false)
     }
@@ -204,4 +220,12 @@ function upcomingDays(): string[] {
     date.setDate(date.getDate() + index + 1)
     return dayKey(date)
   })
+}
+
+function slotErrorMessage(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    if (cause.code === 'slot_overlaps') return 'Один из интервалов пересекается с уже назначенным временем.'
+    if (cause.code === 'slot_in_past') return 'Один из интервалов уже в прошлом — уберите его.'
+  }
+  return 'Не удалось сохранить. Интервалы на месте — попробуйте еще раз.'
 }
