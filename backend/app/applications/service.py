@@ -23,8 +23,9 @@ from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
 from app.analytics import service as analytics
-from app.applications.models import Application, ScreeningAnswer
+from app.applications.models import Application, Match, ScreeningAnswer
 from app.applications.schemas import (
+    CandidateApplicationRead,
     ScreeningAnswerRead,
     ScreeningQuestionRead,
     ScreeningResultResponse,
@@ -41,9 +42,11 @@ from app.applications.state import SCREENING_SOURCE_STATUSES
 from app.candidates.models import CandidateProfile
 from app.core.enums import ApplicationStatus, CriterionType, VacancyStatus
 from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.interviews.models import Interview
 from app.matching.rules import CriterionResult, evaluate_vacancy
 from app.notifications.service import notification_service
 from app.users.models import User
+from app.vacancies import service as vacancies_service
 from app.vacancies.models import ScreeningQuestion, Vacancy, VacancyCriterion
 
 logger = logging.getLogger("app.applications")
@@ -227,6 +230,56 @@ async def submit_screening(
         status=new_status,
         failed_criteria=failed_criteria,
         failed_questions=failed_questions,
+    )
+
+
+async def get_application(user: User, application_id: int) -> CandidateApplicationRead:
+    """Статус отклика кандидата — переживает перезагрузку экрана (C06/C07).
+
+    `POST /applications/{id}/screening` отдаёт `failed_criteria` только
+    синхронно, в момент прохождения отбора. Здесь тот же результат читается
+    заново — из снимка `Application.hard_filter_result`, который отбор уже
+    сохраняет (см. `_store_result`).
+    """
+    application = await _own_application(user, application_id)
+    vacancy = await Vacancy.get(id=application.vacancy_id)
+    vacancy_read = await vacancies_service.read_vacancy_for_candidate(vacancy)
+
+    match = await Match.get_or_none(application_id=application.id)
+    interview_id: int | None = None
+    if match is not None:
+        interview = await Interview.get_or_none(match_id=match.id)
+        interview_id = interview.id if interview is not None else None
+
+    return CandidateApplicationRead(
+        id=application.id,
+        vacancy_id=application.vacancy_id,
+        status=application.status,
+        created_at=application.created_at,
+        vacancy=vacancy_read,
+        failed_criteria=_failed_criteria_from_snapshot(application.hard_filter_result),
+        match_id=match.id if match is not None else None,
+        interview_id=interview_id,
+    )
+
+
+def _failed_criteria_from_snapshot(
+    snapshot: dict[str, Any] | None,
+) -> list[CriterionType]:
+    """Реконструирует `failed_criteria` из снимка отбора.
+
+    Правило то же, что и при самом отборе (`CriterionResult.blocks_feed`,
+    `app.matching.rules`): обязательный критерий, который точно не прошёл.
+    `dict.fromkeys` — та же защита от дублей типа, что и в `submit_screening`.
+    """
+    if not snapshot:
+        return []
+    return list(
+        dict.fromkeys(
+            CriterionType(criterion["type"])
+            for criterion in snapshot.get("criteria", [])
+            if criterion.get("required") and criterion.get("passed") is False
+        )
     )
 
 

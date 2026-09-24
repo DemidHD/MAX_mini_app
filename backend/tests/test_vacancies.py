@@ -736,3 +736,131 @@ async def test_vacancy_feed_and_apply_integration(client: AsyncClient) -> None:
     closed_apply = await client.post(f"/api/vacancies/{closed_source['id']}/apply")
     assert closed_apply.status_code == 409
     assert closed_apply.json()["error"]["code"] == "vacancy_not_published"
+
+
+# --- Удаление черновика ----------------------------------------------------------
+#
+# Баг с демо: кнопка удаления черновика в кабинете ничего не делает, потому что
+# `DELETE /api/vacancies/{id}` в `app/vacancies/router.py` не заведён вовсе (там
+# только POST/GET/PATCH). Ниже — контракт, под который тест написан заранее:
+# работодатель может удалить свой черновик (`204`), но не опубликованную или
+# закрытую вакансию (`409`) — по той же логике, что запрещает `published →
+# draft` (раздел 57): по вакансии, которая хоть раз была опубликована, уже
+# могли прийти отклики, и удалять её без разбора нельзя.
+
+
+async def _delete(client: AsyncClient, vacancy_id: int):
+    return await client.delete(f"/api/vacancies/{vacancy_id}")
+
+
+async def test_vacancy_draft_deletion(client: AsyncClient) -> None:
+    # 1. Без сессии — 401
+    assert (await _delete(client, 1)).status_code == 401
+
+    # 2. Кандидату эндпоинт недоступен вовсе
+    await _login(client, next(_candidate_ids), UserRole.CANDIDATE)
+    wrong_role = await _delete(client, 1)
+    assert wrong_role.status_code == 403
+    assert wrong_role.json()["error"]["code"] == "wrong_role"
+
+    # 3. Чужой черновик — 404, а не 403, и он не пропадает
+    other = await _other_employer()
+    foreign_draft = await Vacancy.create(
+        employer=other, title="Чужой черновик", status=VacancyStatus.DRAFT
+    )
+    await _employer(client)
+    foreign_delete = await _delete(client, foreign_draft.id)
+    assert foreign_delete.status_code == 404
+    assert foreign_delete.json()["error"]["code"] == "vacancy_not_found"
+    assert await Vacancy.filter(id=foreign_draft.id).exists()
+
+    # 4. Несуществующая вакансия — тоже 404
+    assert (await _delete(client, 999999)).status_code == 404
+
+    # 5. Свой черновик удаляется: `204`, и вакансия действительно исчезает
+    own_draft = await _created_vacancy(client)
+    deleted = await _delete(client, own_draft["id"])
+    assert deleted.status_code == 204, deleted.text
+    assert not await Vacancy.filter(id=own_draft["id"]).exists()
+    assert (await client.get(f"/api/vacancies/{own_draft['id']}")).status_code == 404
+
+    # 6. Опубликованную вакансию удалить нельзя — только закрыть
+    published = await _created_vacancy(client, status="published")
+    published_delete = await _delete(client, published["id"])
+    assert published_delete.status_code == 409
+    assert await Vacancy.filter(id=published["id"]).exists()
+
+    # 7. Закрытую — тоже нельзя: с ней могла быть связана история откликов
+    closed = await _created_vacancy(client, status="published")
+    assert (await _update(client, closed["id"], status="closed")).status_code == 200
+    closed_delete = await _delete(client, closed["id"])
+    assert closed_delete.status_code == 409
+    assert await Vacancy.filter(id=closed["id"]).exists()
+
+
+# --- Публичная ссылка на вакансию ------------------------------------------------
+#
+# Баг с демо: `{APP_URL}/v/{public_token}` никуда не ведёт — на backend нет
+# эндпоинта, который резолвил бы токен в вакансию (`GET /vacancies/{id}`
+# принимает только числовой id), а на фронтенде нет роута `/v/:token`.
+# Контракт для backend-части: `GET /vacancies/public/{token}` отдаёт тот же
+# `VacancyRead`, что кандидат получает из `GET /vacancies/{id}` — без
+# `public_token`/`public_url`/`applications_count` и без отсекающих условий
+# в `validation_rules`.
+
+
+async def _public(client: AsyncClient, token: str):
+    return await client.get(f"/api/vacancies/public/{token}")
+
+
+async def test_vacancy_public_link_by_token(client: AsyncClient) -> None:
+    # 1. Без сессии ссылка недоступна — как и обычная карточка вакансии.
+    # Проверка до логина: авторизация проверяется раньше, чем токен резолвится
+    # в вакансию, поэтому реальный токен здесь не нужен.
+    unauthenticated = await _public(client, "irrelevant-token")
+    assert unauthenticated.status_code == 401
+
+    await _employer(client)
+    published = await _created_vacancy(
+        client,
+        status="published",
+        questions=[
+            {
+                "question": "Есть ли медкнижка?",
+                "type": "boolean",
+                "required": True,
+                "validation_rules": {"must_equal": True},
+            }
+        ],
+    )
+    token = published["public_token"]
+    assert token
+
+    # 2. Кандидат по ссылке видит вакансию в том же урезанном виде, что и по id
+    await _candidate(client)
+    by_token = (await _public(client, token)).json()
+    by_id = (await client.get(f"/api/vacancies/{published['id']}")).json()
+    assert by_token == by_id
+    assert by_token["public_token"] is None
+    assert by_token["public_url"] is None
+    assert by_token["applications_count"] is None
+    assert by_token["questions"][0]["validation_rules"] == {}
+
+    # 3. Несуществующий токен — 404, не 422: как и с id, наружу не раскрывается,
+    # существует вакансия или нет
+    unknown_token = await _public(client, "does-not-exist")
+    assert unknown_token.status_code == 404
+    assert unknown_token.json()["error"]["code"] == "vacancy_not_found"
+
+    # 4. Черновик по ссылке не откроется — у него вообще нет токена, но и сам
+    # факт закрытия ссылки для чужой аудитории проверяем на закрытой вакансии
+    await _employer(client)
+    closed = await _created_vacancy(client, status="published")
+    assert (await _update(client, closed["id"], status="closed")).status_code == 200
+    closed_token = closed["public_token"]
+
+    other_candidate_id = next(_candidate_ids)
+    await _login(client, other_candidate_id, UserRole.CANDIDATE)
+    closed_by_token = await _public(client, closed_token)
+    assert closed_by_token.status_code == 404
+    assert closed_by_token.json()["error"]["code"] == "vacancy_not_found"

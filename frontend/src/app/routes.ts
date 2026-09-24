@@ -15,6 +15,8 @@ export const routes = {
   candidateFeed: '/candidate/feed',
   candidateApplications: '/candidate/applications',
   candidateVacancy: (vacancyId: Id = ':vacancyId') => `/candidate/vacancies/${vacancyId}`,
+  /** Публичная ссылка на вакансию `{APP_URL}/v/{token}` (раздел 15 тех-доки). */
+  vacancyPublic: (token: Id = ':token') => `/v/${token}`,
   candidateApplication: (applicationId: Id = ':applicationId') => `/candidate/applications/${applicationId}`,
   candidateScreeningStart: (applicationId: Id = ':applicationId') =>
     `/candidate/applications/${applicationId}/start`,
