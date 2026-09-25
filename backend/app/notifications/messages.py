@@ -91,6 +91,18 @@ def application_reserved(*, vacancy_title: str, application_id: int) -> Notifica
     )
 
 
+def application_rejected(*, vacancy_title: str, application_id: int) -> NotificationContent:
+    """Функции 27-28 UX-карты: нейтральное сообщение, без оценки кандидата —
+    только факт решения по объективным условиям вакансии."""
+    return NotificationContent(
+        text=(
+            f"По вакансии «{vacancy_title}» отклик не подошёл по текущим "
+            "условиям. Спасибо за интерес — другие вакансии доступны в ленте."
+        ),
+        path=application_path(application_id),
+    )
+
+
 def mutual_interest_for_candidate(
     *, vacancy_title: str, application_id: int
 ) -> NotificationContent:

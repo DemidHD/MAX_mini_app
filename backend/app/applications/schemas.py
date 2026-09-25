@@ -74,6 +74,12 @@ class ScreeningStateResponse(BaseModel):
     can_submit: bool
     questions: list[ScreeningQuestionRead]
     answers: list[ScreeningAnswerRead]
+    # Функция 26 UX-карты (режим P2 экрана C05): подсказка из последнего
+    # ответа кандидата на текстуально совпадающий вопрос другой вакансии.
+    # Ничего не сохраняет и не подставляется автоматически в `answers` —
+    # кандидат подтверждает отправкой (раздел 737 тех-доки). Пусто, если по
+    # этому отклику уже есть свои ответы (тогда подсказывать нечего).
+    suggested_answers: list[ScreeningAnswerRead]
 
 
 class ScreeningResultResponse(BaseModel):
@@ -220,6 +226,28 @@ class CandidateApplicationRead(BaseModel):
     # Есть после взаимного интереса / назначенного интервью
     match_id: int | None
     interview_id: int | None
+
+
+class CandidateApplicationListItem(BaseModel):
+    """Отклик в списке «Мои отклики» (экран C12 UX-карты, функции 27-28).
+
+    Короткая карточка списка — без `failed_criteria` и `vacancy` целиком:
+    это не экран разбора причин отказа (там уже есть `CandidateApplicationRead`
+    для одного отклика), а обзор всех своих откликов и их статусов.
+    """
+
+    id: int
+    vacancy_id: int
+    vacancy_title: str
+    status: ApplicationStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+class CandidateApplicationListResponse(BaseModel):
+    """Список откликов кандидата, отсортированный по последнему изменению."""
+
+    items: list[CandidateApplicationListItem]
 
 
 class ApplicationCreatedResponse(BaseModel):

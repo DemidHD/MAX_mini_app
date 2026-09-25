@@ -20,6 +20,13 @@ class CandidateProfile(Model):
     schedule = fields.CharField(max_length=100, null=True)
     experience_months = fields.IntField(null=True, validators=[MinValueValidator(0)])
     available_from = fields.DateField(null=True)
+    # Функция 29 UX-карты (экран C11): PDF/DOCX резюме, необязательное.
+    # Раздел 3 тех-доки — бинарник в `storage/resumes/{user_id}/...`, в БД
+    # только путь. `resume_text` — извлечённый текст: используется разбором
+    # (`POST /candidate/resume/parse`) без повторного чтения файла с диска.
+    resume_path = fields.CharField(max_length=500, null=True)
+    resume_text = fields.TextField(null=True)
+    resume_updated_at = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

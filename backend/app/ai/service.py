@@ -25,7 +25,9 @@ from app.ai.providers import (
 )
 from app.ai.schemas import (
     ParsedVacancyDraft,
+    ParseResumeResponse,
     ParseVacancyResponse,
+    ResumeParsedDraft,
     TranscribeVacancyResponse,
 )
 
@@ -68,6 +70,28 @@ PARSE_SYSTEM_PROMPT = (
     "boolean, choice. Не придумывай данные, которых нет в тексте — оставляй "
     "поле null или пустой список. Никогда не используй пол, возраст, "
     "внешность, фото или иные личные характеристики кандидата."
+)
+
+
+# Функция 29 UX-карты (C11 «Импорт резюме»): извлекаем только те поля,
+# которые есть в профиле кандидата (`CandidateProfileUpdateRequest») — раздел
+# 31 тех-доки запрещает пол/возраст/фото/субъективные характеристики так же,
+# как и при разборе вакансии, поэтому запрет повторён явно.
+PARSE_RESUME_SYSTEM_PROMPT = (
+    "Ты помогаешь кандидату заполнить профиль для поиска работы по тексту его "
+    "резюме.\n\n"
+    "Извлеки из текста поля профиля и верни СТРОГО один JSON-объект без "
+    "пояснений, без markdown и без текста до или после: "
+    '{"desired_role": str|null, "city": str|null, "salary": number|null, '
+    '"schedule": str|null, "experience_months": number|null, '
+    '"available_from": str|null}. '
+    "desired_role — последняя или желаемая должность. salary — ожидания по "
+    "зарплате в рублях, если указаны. experience_months — суммарный опыт "
+    "работы в месяцах, если его можно посчитать. available_from — дата "
+    "готовности выйти в формате YYYY-MM-DD, если она есть в тексте, иначе "
+    "null. Не придумывай данные, которых нет в тексте — оставляй поле null. "
+    "Никогда не используй пол, возраст, внешность, фото, семейное положение "
+    "или иные личные характеристики кандидата."
 )
 
 
@@ -114,6 +138,27 @@ class AIService:
             ai_available=True,
             rejected=rejection_reason is not None,
             rejection_reason=rejection_reason,
+        )
+
+    async def parse_resume(self, text: str) -> ParseResumeResponse:
+        """Функция 29 UX-карты: черновик полей профиля из текста резюме.
+
+        Тот же принцип best-effort, что и `parse_vacancy` (раздел 57): нет
+        провайдера или невалидный JSON — пустой черновик, а не ошибка. Вызов
+        ничего не сохраняет — подтверждает и сохраняет кандидат отдельным
+        `PATCH /candidate/profile`.
+        """
+        raw, provider_name = await self._complete_with_failover(
+            system_prompt=PARSE_RESUME_SYSTEM_PROMPT, user_prompt=text
+        )
+        if raw is None:
+            logger.warning("Ни один ИИ-провайдер не ответил на разбор резюме")
+            return ParseResumeResponse(
+                parsed=ResumeParsedDraft(), provider=None, ai_available=False
+            )
+
+        return ParseResumeResponse(
+            parsed=_parse_resume_draft(raw), provider=provider_name, ai_available=True
         )
 
     async def transcribe_vacancy(
@@ -182,6 +227,20 @@ def _parse_draft(raw: str) -> tuple[ParsedVacancyDraft, str | None]:
     except PydanticValidationError:
         logger.warning("ИИ вернул JSON, не подходящий под схему вакансии")
         return ParsedVacancyDraft(), None
+
+
+def _parse_resume_draft(raw: str) -> ResumeParsedDraft:
+    """Невалидный JSON или несовпадение со схемой — пустой черновик (раздел
+    57), а не ошибка: кандидат заполняет профиль вручную."""
+    candidate = _extract_json_object(raw)
+    if candidate is None:
+        logger.warning("ИИ вернул невалидный JSON при разборе резюме")
+        return ResumeParsedDraft()
+    try:
+        return ResumeParsedDraft.model_validate(candidate)
+    except PydanticValidationError:
+        logger.warning("ИИ вернул JSON, не подходящий под схему профиля")
+        return ResumeParsedDraft()
 
 
 def _extract_json_object(raw: str) -> dict | None:

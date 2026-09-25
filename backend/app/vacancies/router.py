@@ -7,11 +7,19 @@
 в `GET /vacancies/{vacancy_id}` как параметр пути.
 """
 
+from datetime import datetime
+
 from fastapi import APIRouter, BackgroundTasks, Query, status
 
 from app.auth.dependencies import CurrentUser, EmployerUser
 from app.vacancies import service
 from app.vacancies.schemas import (
+    CalibrationProfilesResponse,
+    CalibrationSubmitRequest,
+    CalibrationWeightsResponse,
+    ReferralLinkListResponse,
+    ReferralLinkRead,
+    VacancyAnalyticsResponse,
     VacancyCreateRequest,
     VacancyListResponse,
     VacancyRead,
@@ -67,6 +75,40 @@ async def delete_vacancy(vacancy_id: int, user: EmployerUser) -> None:
     await service.delete_vacancy(user, vacancy_id)
 
 
+@router.get("/{vacancy_id}/calibration", response_model=CalibrationProfilesResponse)
+async def get_calibration_profiles(
+    vacancy_id: int, user: EmployerUser
+) -> CalibrationProfilesResponse:
+    """Синтетические тестовые карточки калибровки (E17, функция 25)."""
+    return await service.get_calibration_profiles(user, vacancy_id)
+
+
+@router.post("/{vacancy_id}/calibration", response_model=CalibrationWeightsResponse)
+async def submit_calibration(
+    vacancy_id: int, payload: CalibrationSubmitRequest, user: EmployerUser
+) -> CalibrationWeightsResponse:
+    """Считает и сохраняет веса желательных критериев по решениям работодателя."""
+    return await service.submit_calibration(user, vacancy_id, payload)
+
+
+@router.post(
+    "/{vacancy_id}/referral",
+    response_model=ReferralLinkRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_referral_link(vacancy_id: int, user: EmployerUser) -> ReferralLinkRead:
+    """Создаёт реферальную ссылку на вакансию (R01, функция 32)."""
+    return await service.create_referral_link(user, vacancy_id)
+
+
+@router.get("/{vacancy_id}/referral", response_model=ReferralLinkListResponse)
+async def list_referral_links(
+    vacancy_id: int, user: EmployerUser
+) -> ReferralLinkListResponse:
+    """Уже созданные реферальные ссылки вакансии."""
+    return await service.list_referral_links(user, vacancy_id)
+
+
 @employer_router.get("/vacancies", response_model=VacancyListResponse)
 async def list_own_vacancies(
     user: EmployerUser,
@@ -75,3 +117,18 @@ async def list_own_vacancies(
 ) -> VacancyListResponse:
     """Вакансии текущего работодателя для его кабинета."""
     return await service.list_own_vacancies(user, limit=limit, offset=offset)
+
+
+@employer_router.get(
+    "/vacancies/{vacancy_id}/analytics", response_model=VacancyAnalyticsResponse
+)
+async def get_vacancy_analytics(
+    vacancy_id: int,
+    user: EmployerUser,
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+) -> VacancyAnalyticsResponse:
+    """Сводка аналитики по вакансии (E18, функция 33)."""
+    return await service.vacancy_analytics(
+        user, vacancy_id, date_from=date_from, date_to=date_to
+    )

@@ -24,8 +24,8 @@ class Vacancy(Model):
     location = fields.CharField(max_length=255, null=True)
     # Ссылка на фото по теме вакансии (не из тех-доки) — не сам файл: раздел 3
     # запрещает хранить бинарники в БД, и внешний файл здесь тем более незачем
-    # тянуть на свой диск. Проверяется и при необходимости переподбирается при
-    # каждом открытии карточки (`app.vacancies.images`).
+    # тянуть на свой диск. Подбирается один раз, если его ещё нет; уже
+    # назначенная ссылка не меняется (`app.vacancies.images`).
     image_url = fields.TextField(null=True)
     salary_min = fields.DecimalField(max_digits=12, decimal_places=2, null=True)
     salary_max = fields.DecimalField(max_digits=12, decimal_places=2, null=True)

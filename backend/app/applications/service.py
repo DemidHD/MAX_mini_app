@@ -26,6 +26,8 @@ from tortoise.transactions import in_transaction
 from app.analytics import service as analytics
 from app.applications.models import Application, Match, ScreeningAnswer
 from app.applications.schemas import (
+    CandidateApplicationListItem,
+    CandidateApplicationListResponse,
     CandidateApplicationRead,
     ScreeningAnswerRead,
     ScreeningQuestionRead,
@@ -48,14 +50,17 @@ from app.matching.rules import CriterionResult, evaluate_vacancy
 from app.notifications.service import notification_service
 from app.users.models import User
 from app.vacancies import service as vacancies_service
-from app.vacancies.models import ScreeningQuestion, Vacancy, VacancyCriterion
+from app.vacancies.models import ReferralLink, ScreeningQuestion, Vacancy, VacancyCriterion
 
 logger = logging.getLogger("app.applications")
 
 
 
 async def apply(
-    user: User, vacancy_id: int, background_tasks: BackgroundTasks
+    user: User,
+    vacancy_id: int,
+    background_tasks: BackgroundTasks,
+    referral_code: str | None = None,
 ) -> tuple[Application, bool]:
     """Отклик кандидата на вакансию (раздел 32).
 
@@ -90,10 +95,22 @@ async def apply(
     if existing is not None:
         return existing, False
 
+    # Функция 32 UX-карты (R01): источник отклика, если он пришёл по
+    # реферальной ссылке. Неверный/чужой код не блокирует отклик — просто
+    # не засчитывается, тем же принципом best-effort, что и подбор фото
+    # вакансии (раздел 57).
+    referral_link_id: int | None = None
+    if referral_code:
+        referral_link_id = await ReferralLink.filter(
+            vacancy_id=vacancy.id, code=referral_code
+        ).values_list("id", flat=True)
+        referral_link_id = referral_link_id[0] if referral_link_id else None
+
     try:
         application = await Application.create(
             vacancy_id=vacancy.id,
             candidate_id=user.user_id,
+            referral_link_id=referral_link_id,
             # Раздел 32: сразу после создания отклик идёт на первичный отбор
             status=ApplicationStatus.SCREENING,
         )
@@ -161,7 +178,47 @@ async def get_screening(user: User, application_id: int) -> ScreeningStateRespon
             )
             for answer in answers
         ],
+        suggested_answers=(
+            [] if answers else await _suggested_answers(user, application, questions)
+        ),
     )
+
+
+async def _suggested_answers(
+    user: User, application: Application, questions: list[ScreeningQuestion]
+) -> list[ScreeningAnswerRead]:
+    """Функция 26 UX-карты: последний ответ кандидата на текстуально тот же
+    вопрос другой вакансии, если он ещё не отвечал на этот отклик.
+
+    Совпадение — по точному тексту вопроса без учёта регистра и краевых
+    пробелов: разные вакансии формулируют вопросы независимо, и только
+    буквальное совпадение гарантирует, что подсказка отвечает на тот же
+    вопрос, а не просто на похожий.
+    """
+    if not questions:
+        return []
+
+    past_answers = (
+        await ScreeningAnswer.filter(application__candidate_id=user.user_id)
+        .exclude(application_id=application.id)
+        .order_by("-created_at")
+        .select_related("question")
+    )
+    latest_by_text: dict[str, ScreeningAnswer] = {}
+    for answer in past_answers:
+        key = answer.question.question.strip().casefold()
+        latest_by_text.setdefault(key, answer)
+
+    suggestions: list[ScreeningAnswerRead] = []
+    for question in questions:
+        match = latest_by_text.get(question.question.strip().casefold())
+        if match is not None:
+            suggestions.append(
+                ScreeningAnswerRead(
+                    question_id=question.id, value=stored_value(match.value)
+                )
+            )
+    return suggestions
 
 
 async def submit_screening(
@@ -270,6 +327,31 @@ async def get_application(
         failed_criteria=_failed_criteria_from_snapshot(application.hard_filter_result),
         match_id=match.id if match is not None else None,
         interview_id=interview_id,
+    )
+
+
+async def list_my_applications(user: User) -> CandidateApplicationListResponse:
+    """Список откликов кандидата для экрана «Мои отклики» (C12 UX-карты,
+    функции 27-28): убрать неизвестность после отклика — видно все статусы
+    сразу, отсортированные по последнему изменению.
+    """
+    applications = (
+        await Application.filter(candidate_id=user.user_id)
+        .order_by("-updated_at")
+        .select_related("vacancy")
+    )
+    return CandidateApplicationListResponse(
+        items=[
+            CandidateApplicationListItem(
+                id=application.id,
+                vacancy_id=application.vacancy_id,
+                vacancy_title=application.vacancy.title,
+                status=application.status,
+                created_at=application.created_at,
+                updated_at=application.updated_at,
+            )
+            for application in applications
+        ]
     )
 
 

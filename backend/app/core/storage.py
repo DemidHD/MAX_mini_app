@@ -4,8 +4,10 @@
 только путь. Структура — `storage/avatars/{user_id}/avatar.{ext}`.
 """
 
+import io
 import logging
 import os
+import zipfile
 from pathlib import Path
 from uuid import uuid4
 
@@ -26,6 +28,13 @@ MAGIC_BYTES = {
     "image/jpeg": (b"\xff\xd8\xff",),
     "image/png": (b"\x89PNG\r\n\x1a\n",),
     "image/webp": (b"RIFF",),
+}
+
+# Функция 29 UX-карты (C11 «Импорт резюме»)
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+RESUME_MIME_TO_EXTENSION = {
+    "application/pdf": "pdf",
+    DOCX_MIME: "docx",
 }
 
 
@@ -59,6 +68,86 @@ def ensure_avatar_size(size: int) -> None:
         raise FileTooLargeError(
             f"Максимальный размер аватарки — {settings.avatar_max_size_bytes} байт"
         )
+
+
+def detect_resume_mime(content: bytes) -> str:
+    """PDF определяется по сигнатуре `%PDF-`. DOCX — это ZIP-контейнер:
+    общая сигнатура `PK\\x03\\x04` есть у любого OOXML/ZIP, поэтому
+    дополнительно проверяется, что внутри есть `word/document.xml` — так же,
+    как webp дополнительно проверяет подпись `WEBP` после `RIFF`."""
+    if content.startswith(b"%PDF-"):
+        return "application/pdf"
+    if content.startswith(b"PK\x03\x04"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                if "word/document.xml" in archive.namelist():
+                    return DOCX_MIME
+        except zipfile.BadZipFile:
+            pass
+    raise UnsupportedFileTypeError()
+
+
+def ensure_resume_size(size: int) -> None:
+    if size == 0:
+        raise ValidationError("Файл пустой", code="empty_file")
+    if size > settings.resume_max_size_bytes:
+        raise FileTooLargeError(
+            f"Максимальный размер резюме — {settings.resume_max_size_bytes} байт"
+        )
+
+
+def save_resume(user_id: int, content: bytes, mime: str) -> Path:
+    """Сохраняет резюме и возвращает путь для записи в БД. Тот же приём, что
+    и `save_avatar`: каталог — по `user_id` из сессии, имя — по токену, а не
+    по присланному имени файла."""
+    directory = settings.resumes_dir / str(user_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    token = uuid4().hex
+    path = directory / f"resume-{token}.{RESUME_MIME_TO_EXTENSION[mime]}"
+    temporary_path = directory / f".{token}.tmp"
+    try:
+        with temporary_path.open("xb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary_path.replace(path)
+    except BaseException:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            logger.exception("Не удалось удалить временный файл: %s", temporary_path)
+        raise
+    return path
+
+
+def extract_resume_text(content: bytes, mime: str) -> str | None:
+    """Лучшее старание (раздел 57): повреждённый/нестандартный файл не должен
+    ронять загрузку — кандидат просто не получит текст для разбора и
+    заполнит профиль вручную (состояние «Ошибка -> ручное заполнение» C11)."""
+    try:
+        if mime == "application/pdf":
+            return _extract_pdf_text(content)
+        if mime == DOCX_MIME:
+            return _extract_docx_text(content)
+    except Exception:  # noqa: BLE001 — парсинг стороннего файла непредсказуем
+        logger.warning("Не удалось извлечь текст резюме", exc_info=True)
+    return None
+
+
+def _extract_pdf_text(content: bytes) -> str | None:
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(content))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    return text.strip() or None
+
+
+def _extract_docx_text(content: bytes) -> str | None:
+    from docx import Document
+
+    document = Document(io.BytesIO(content))
+    text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    return text.strip() or None
 
 
 def save_avatar(user_id: int, content: bytes, mime: str) -> Path:

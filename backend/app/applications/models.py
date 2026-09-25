@@ -34,6 +34,15 @@ class Application(Model):
     # отбора, и карточка начала бы противоречить статусу отклика — человек
     # отбор прошёл, а условия показывались бы проваленными.
     hard_filter_result = fields.JSONField(null=True)
+    # Функция 32 UX-карты (R01): источник отклика, если он пришёл по
+    # реферальной ссылке. Неверный/чужой код при отклике просто игнорируется
+    # (см. `app.applications.service.apply`), поэтому поле всегда нетребуемое.
+    referral_link = fields.ForeignKeyField(
+        "models.ReferralLink",
+        related_name="applications",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

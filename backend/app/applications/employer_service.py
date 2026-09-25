@@ -39,8 +39,13 @@ from app.core.database import utcnow
 from app.core.enums import ApplicationStatus, CriterionType, DecisionAction
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.matching.explain import explain as build_explanation
+from app.matching.learning import learned_weight_adjustment
 from app.matching.ranking import CriterionOutcome, rank as rank_criteria
-from app.matching.rules import months_from_criterion_value
+from app.matching.rules import (
+    evaluate_vacancy,
+    matches_required_criteria,
+    months_from_criterion_value,
+)
 from app.notifications.service import notification_service
 from app.users.models import User
 from app.vacancies import service as vacancies_service
@@ -109,7 +114,7 @@ async def list_candidates(
     ).order_by("-created_at", "-id")
     total = len(applications)
 
-    weights, experience_required = await _criteria_context(vacancy.id)
+    weights, experience_required = await _criteria_context(vacancy.id, user.user_id)
     ranked = sorted(
         await _build_cards(
             vacancy,
@@ -129,8 +134,125 @@ async def list_candidates(
     )
 
 
+async def list_reserved_candidates(
+    user: User, vacancy_id: int, *, limit: int, offset: int
+) -> CandidateListResponse:
+    """Кандидаты из резерва по другим вакансиям, подходящие этой (функция 30
+    UX-карты, E16 в режиме P2): «При новой вакансии сначала показать прошлых
+    подходящих кандидатов». Новой таблицы нет — резерв уже есть в
+    `applications.status=reserved` (P1, функция 22, `decision.action=reserve`).
+
+    Кандидат из резерва проверяется по условиям ИМЕННО этой вакансии заново
+    (`app.matching.rules.evaluate_vacancy`, та же функция, что и в ленте) —
+    снимок первичного отбора здесь не годится, он снят на другой вакансии с
+    другими критериями. Кто не проходит обязательные условия — не попадает
+    в список, как и в обычном списке кандидатов.
+
+    Один кандидат мог попасть в резерв с нескольких вакансий — берётся
+    последнее по времени решение о резерве.
+    """
+    vacancy = await _own_vacancy(user, vacancy_id)
+    weights, experience_required = await _criteria_context(vacancy.id, user.user_id)
+    criteria = await VacancyCriterion.filter(vacancy_id=vacancy.id)
+
+    reserved = (
+        await Application.filter(
+            status=ApplicationStatus.RESERVED, vacancy__employer_id=user.user_id
+        )
+        .exclude(vacancy_id=vacancy.id)
+        .order_by("-updated_at", "-id")
+    )
+    latest_by_candidate: dict[int, Application] = {}
+    for application in reserved:
+        latest_by_candidate.setdefault(application.candidate_id, application)
+
+    profiles = {
+        profile.user_id: profile
+        for profile in await CandidateProfile.filter(
+            user_id__in=list(latest_by_candidate.keys())
+        )
+    }
+
+    scored: list[tuple[CandidateCard, Decimal]] = []
+    for candidate_id, application in latest_by_candidate.items():
+        profile = profiles.get(candidate_id)
+        results = evaluate_vacancy(vacancy, criteria, profile)
+        if not matches_required_criteria(results):
+            continue
+        outcomes = [
+            CriterionOutcome(type=result.type, required=result.required, passed=result.passed)
+            for result in results
+        ]
+        scored.append(
+            _build_reserved_card(
+                application,
+                profile,
+                outcomes,
+                weights=weights,
+                experience_required=experience_required,
+            )
+        )
+
+    scored.sort(key=lambda scored_card: scored_card[1], reverse=True)
+    total = len(scored)
+    return CandidateListResponse(
+        items=[card for card, _score in scored[offset : offset + limit]],
+        limit=limit,
+        offset=offset,
+        total=total,
+    )
+
+
+def _build_reserved_card(
+    application: Application,
+    profile: CandidateProfile | None,
+    outcomes: list[CriterionOutcome],
+    *,
+    weights: dict[CriterionType, Decimal],
+    experience_required: int | None,
+) -> tuple[CandidateCard, Decimal]:
+    ranking = rank_criteria(outcomes, weights)
+    explanation = build_explanation(
+        outcomes,
+        experience_required_months=experience_required,
+        candidate_experience_months=profile.experience_months if profile else None,
+    )
+    card = CandidateCard(
+        application_id=application.id,
+        status=application.status,
+        applied_at=application.created_at,
+        desired_role=profile.desired_role if profile else None,
+        city=profile.city if profile else None,
+        salary=profile.salary if profile else None,
+        schedule=profile.schedule if profile else None,
+        experience_months=profile.experience_months if profile else None,
+        available_from=profile.available_from if profile else None,
+        # Резервный кандидат пришёл с другой вакансии — её вопросы отбора к
+        # этой не относятся, показывать их здесь нечем.
+        screening_answers=[],
+        hard_filters=[
+            CardCriterionResult(
+                type=outcome.type, required=outcome.required, passed=outcome.passed
+            )
+            for outcome in outcomes
+        ],
+        explanation=MatchExplanation(
+            matched=explanation.matched,
+            experience=(
+                ExperienceExplanation(
+                    candidate=explanation.experience.candidate,
+                    required=explanation.experience.required,
+                )
+                if explanation.experience
+                else None
+            ),
+        ),
+    )
+    return card, ranking.score
+
+
 async def _criteria_context(
-    vacancy_id: int,
+    vacancy_id: int, employer_id: int
 ) -> tuple[dict[CriterionType, Decimal], int | None]:
     """Веса критериев и требуемый опыт (в месяцах) для ranking и объяснимости.
 
@@ -138,15 +260,30 @@ async def _criteria_context(
     только сортирует список и не меняет статус кандидата, поэтому нужны
     актуальные веса работодателя, а не те, что были на момент отбора.
     Двух критериев одного типа контракт не запрещает — берётся первый.
+
+    Функция 30 UX-карты (E07, режим P2 «Персонализированная очередь»):
+    критерию без явного веса (ни калибровки, ни ручного значения) подставляется
+    поправка, посчитанная по истории решений работодателя — `app.matching.learning`.
+    Явный вес работодателя поправка не трогает.
     """
     weights: dict[CriterionType, Decimal] = {}
     experience_required: int | None = None
+    desirable_types: set[CriterionType] = set()
     for criterion in await VacancyCriterion.filter(vacancy_id=vacancy_id):
         if criterion.type not in weights and criterion.weight is not None:
             weights[criterion.type] = criterion.weight
         if criterion.type is CriterionType.EXPERIENCE and experience_required is None:
             value = criterion.value if isinstance(criterion.value, dict) else {}
             experience_required = months_from_criterion_value(value.get("min_months"))
+        if not criterion.required:
+            desirable_types.add(criterion.type)
+
+    missing = desirable_types - weights.keys()
+    if missing:
+        learned = await learned_weight_adjustment(employer_id)
+        for criterion_type in missing:
+            if criterion_type in learned:
+                weights[criterion_type] = learned[criterion_type]
     return weights, experience_required
 
 
@@ -229,6 +366,8 @@ async def decide(
         await _notify_invited(user, application, match_id, background_tasks)
     elif action is DecisionAction.RESERVED:
         await _notify_reserved(application, background_tasks)
+    elif action is DecisionAction.REJECTED:
+        await _notify_rejected(application, background_tasks)
     logger.info(
         "Решение работодателя: отклик=%s действие=%s статус=%s",
         application.id,
@@ -292,6 +431,23 @@ async def _notify_reserved(
 
     background_tasks.add_task(
         notification_service.application_reserved,
+        candidate_id=application.candidate_id,
+        application_id=application.id,
+        vacancy_title=vacancy.title,
+    )
+
+
+async def _notify_rejected(
+    application: Application, background_tasks: BackgroundTasks
+) -> None:
+    """Уведомление кандидату об отказе (функции 27-28 UX-карты, раздел 46)."""
+    vacancy = await Vacancy.get_or_none(id=application.vacancy_id)
+    if vacancy is None:
+        logger.warning("Вакансия отклика %s не найдена", application.id)
+        return
+
+    background_tasks.add_task(
+        notification_service.application_rejected,
         candidate_id=application.candidate_id,
         application_id=application.id,
         vacancy_title=vacancy.title,

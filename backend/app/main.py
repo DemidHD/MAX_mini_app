@@ -13,6 +13,7 @@ from tortoise.contrib.fastapi import RegisterTortoise
 
 from app.ai.router import router as ai_router
 from app.ai.service import configure_ai_service
+from app.analytics.router import router as analytics_router
 from app.applications.router import employer_router, vacancies_router
 from app.applications.router import router as applications_router
 from app.auth.router import router as auth_router
@@ -100,6 +101,7 @@ api_router.include_router(employer_router)
 api_router.include_router(employer_vacancies_router)
 api_router.include_router(matches_router)
 api_router.include_router(ai_router)
+api_router.include_router(analytics_router)
 app.include_router(api_router)
 
 

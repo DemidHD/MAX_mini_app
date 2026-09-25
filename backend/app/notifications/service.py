@@ -104,6 +104,19 @@ class NotificationService:
             ),
         )
 
+    async def application_rejected(
+        self, *, candidate_id: int, application_id: int, vacancy_title: str
+    ) -> None:
+        """Кандидату: работодатель отклонил отклик (функции 27-28 UX-карты)."""
+        await self._deliver(
+            NotificationType.APPLICATION_REJECTED,
+            user_id=candidate_id,
+            entity_id=application_id,
+            content=messages.application_rejected(
+                vacancy_title=vacancy_title, application_id=application_id
+            ),
+        )
+
     async def mutual_interest(
         self,
         *,

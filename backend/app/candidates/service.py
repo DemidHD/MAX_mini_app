@@ -1,13 +1,26 @@
 """Бизнес-логика профиля кандидата. Разделы 12, 14, 27 тех-доки."""
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from tortoise.exceptions import IntegrityError
+from tortoise.transactions import in_transaction
 
+from app.ai.schemas import ParseResumeResponse, ResumeParsedDraft
+from app.ai.service import ai_service
 from app.candidates.models import CandidateProfile
 from app.candidates.schemas import CandidateProfileUpdateRequest
+from app.core.database import utcnow
 from app.core.errors import NotFoundError, ValidationError
+from app.core.storage import (
+    delete_file,
+    detect_resume_mime,
+    ensure_resume_size,
+    extract_resume_text,
+    resolve_stored_file,
+    save_resume,
+)
 from app.users.models import User
 
 logger = logging.getLogger("app.candidates")
@@ -77,3 +90,108 @@ async def _apply_changes(
         setattr(profile, field, value)
     await profile.save(update_fields=[*changes.keys(), "updated_at"])
     return profile
+
+
+async def set_resume(user: User, content: bytes) -> CandidateProfile:
+    """Загружает или заменяет резюме (экран C11 UX-карты, функция 29).
+
+    Профиль должен уже существовать: `desired_role` в `candidate_profiles`
+    обязателен, поэтому резюме нельзя привязать раньше первого сохранения
+    профиля — тот же порядок, что и у остальных полей кандидата.
+
+    Текст извлекается сразу (best-effort, раздел 57): `resume_text` хранится
+    для `parse_resume`, чтобы тот не читал файл заново.
+    """
+    profile = await get_profile(user)
+    ensure_resume_size(len(content))
+    mime = detect_resume_mime(content)
+    new_path = save_resume(user.user_id, content, mime)
+    text = extract_resume_text(content, mime)
+    previous_path: str | None = None
+    updated_at = utcnow()
+    try:
+        async with in_transaction() as connection:
+            locked = await (
+                CandidateProfile.filter(user_id=user.user_id)
+                .using_db(connection)
+                .select_for_update()
+                .get()
+            )
+            previous_path = locked.resume_path
+            locked.resume_path = str(new_path)
+            locked.resume_text = text
+            locked.resume_updated_at = updated_at
+            await locked.save(
+                using_db=connection,
+                update_fields=[
+                    "resume_path",
+                    "resume_text",
+                    "resume_updated_at",
+                    "updated_at",
+                ],
+            )
+    except Exception:
+        delete_file(new_path)
+        raise
+
+    profile.resume_path = str(new_path)
+    profile.resume_text = text
+    profile.resume_updated_at = updated_at
+    if previous_path:
+        delete_file(previous_path)
+    return profile
+
+
+async def delete_resume(user: User) -> None:
+    """Удаляет файл резюме и очищает поля. Отсутствие резюме — не ошибка."""
+    profile = await get_profile(user)
+    async with in_transaction() as connection:
+        locked = await (
+            CandidateProfile.filter(user_id=user.user_id)
+            .using_db(connection)
+            .select_for_update()
+            .get()
+        )
+        previous_path = locked.resume_path
+        if not previous_path:
+            raise NotFoundError("Резюме не загружено", code="resume_not_found")
+
+        locked.resume_path = None
+        locked.resume_text = None
+        locked.resume_updated_at = None
+        await locked.save(
+            using_db=connection,
+            update_fields=[
+                "resume_path",
+                "resume_text",
+                "resume_updated_at",
+                "updated_at",
+            ],
+        )
+
+    profile.resume_path = None
+    profile.resume_text = None
+    profile.resume_updated_at = None
+    delete_file(previous_path)
+
+
+def get_resume_file(profile: CandidateProfile) -> Path:
+    """Путь к резюме текущего кандидата. Чужой файл получить нельзя: путь
+    берётся из записи профиля сессии, дополнительно проверяется, что он
+    лежит внутри хранилища."""
+    path = resolve_stored_file(profile.resume_path)
+    if path is None:
+        raise NotFoundError("Резюме не загружено", code="resume_not_found")
+    return path
+
+
+async def parse_resume(user: User) -> ParseResumeResponse:
+    """ИИ-черновик полей профиля из текста резюме (C11): результат никогда
+    не сохраняется как истина без подтверждения — кандидат применяет его
+    через `PATCH /candidate/profile` отдельным запросом."""
+    profile = await get_profile(user)
+    if not profile.resume_text:
+        return ParseResumeResponse(
+            parsed=ResumeParsedDraft(), provider=None, ai_available=False
+        )
+    return await ai_service.parse_resume(profile.resume_text)

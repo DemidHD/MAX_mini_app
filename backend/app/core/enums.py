@@ -98,8 +98,9 @@ class InterviewStatus(StrEnum):
 class NotificationType(StrEnum):
     """Раздел 46.
 
-    Остальные типы раздела 46 (`application_rejected`, `interview_cancelled`
-    и другие) относятся к P2 и пока не заводятся.
+    Остальные типы раздела 46 (`interview_cancelled`, `interview_rescheduled`,
+    `interview_reminder`, `application_status_changed`) в P2 не входят
+    (функции 27-28 UX-карты требуют только отказ) и пока не заводятся.
     """
 
     APPLICATION_CREATED = "application_created"
@@ -109,6 +110,8 @@ class NotificationType(StrEnum):
     INTERVIEW_BOOKED = "interview_booked"
     # P1 — функция «Резерв» (раздел 20)
     APPLICATION_RESERVED = "application_reserved"
+    # P2 — автосообщение об отказе (функции 27-28 UX-карты, раздел 46 тех-доки)
+    APPLICATION_REJECTED = "application_rejected"
 
 
 class NotificationStatus(StrEnum):

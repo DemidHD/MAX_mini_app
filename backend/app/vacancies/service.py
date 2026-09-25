@@ -10,28 +10,40 @@
 
 import logging
 import secrets
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
 from fastapi import BackgroundTasks
 from tortoise.backends.base.client import BaseDBAsyncClient
+from tortoise.exceptions import IntegrityError
 from tortoise.functions import Count
 from tortoise.transactions import in_transaction
 
 from app.analytics import service as analytics
-from app.applications.models import Application
+from app.applications.models import Application, EmployerDecision, Match
 from app.applications.screening import public_rules
 from app.core.config import settings
-from app.core.enums import UserRole, VacancyStatus
+from app.core.enums import ApplicationStatus, DecisionAction, UserRole, VacancyStatus
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
+from app.interviews.models import Interview
 from app.users.models import User
 from app.vacancies import images
-from app.vacancies.models import ScreeningQuestion, Vacancy, VacancyCriterion
+from app.vacancies import calibration
+from app.vacancies.models import ReferralLink, ScreeningQuestion, Vacancy, VacancyCriterion
 from app.vacancies.schemas import (
+    CalibrationCriterionRead,
+    CalibrationProfileRead,
+    CalibrationProfilesResponse,
+    CalibrationSubmitRequest,
+    CalibrationWeightsResponse,
     CriterionRead,
     CriterionWrite,
+    ReferralLinkListResponse,
+    ReferralLinkRead,
     ScreeningQuestionRead,
     ScreeningQuestionWrite,
+    VacancyAnalyticsResponse,
     VacancyCreateRequest,
     VacancyListResponse,
     VacancyRead,
@@ -44,6 +56,10 @@ logger = logging.getLogger("app.vacancies")
 # Раздел 15: колонка `public_token` — VARCHAR(32)
 PUBLIC_TOKEN_BYTES = 24
 PUBLIC_TOKEN_ATTEMPTS = 3
+
+# Раздел 24: колонка `referral_links.code` — VARCHAR(100)
+REFERRAL_CODE_BYTES = 8
+REFERRAL_CODE_ATTEMPTS = 3
 
 # Раздел 29: без этих данных вакансия не публикуется
 PUBLICATION_REQUIRED_FIELDS = ("title", "location", "salary", "schedule")
@@ -385,7 +401,9 @@ async def _assign_image(vacancy: Vacancy) -> None:
 
     Лучшее старание, как и с ИИ (раздел 57): ошибка поиска не должна мешать
     созданию вакансии — она просто останется без фото до следующего открытия
-    карточки, где подбор повторится (`app.vacancies.images.ensure_fresh_image`).
+    карточки, где подбор попробуется ещё раз
+    (`app.vacancies.images.ensure_fresh_image`). Уже найденное фото этот
+    повторный подбор не трогает — оно назначается вакансии один раз.
     """
     image_url = await images.find_image(vacancy.title)
     if image_url:
@@ -503,6 +521,189 @@ async def _new_public_token(connection: BaseDBAsyncClient) -> str:
     )
 
 
+async def vacancy_analytics(
+    user: User,
+    vacancy_id: int,
+    *,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> VacancyAnalyticsResponse:
+    """Сводка аналитики по вакансии (E18 UX-карты, функция 33, раздел 69
+    тех-доки). Считается из уже существующих таблиц — отдельной модели нет.
+
+    `invited` — по `employer_decisions`, не по `applications.status`: решение
+    «пригласить» сразу переводит отклик в `mutual_interest` (раздел 36),
+    `invited` как хранимое состояние не встречается (см. `decide()`).
+
+    `time_to_first_interview_seconds` считается от создания вакансии (а не от
+    публикации — отдельного поля даты публикации в модели нет) до первого
+    назначенного собеседования; `None`, если собеседований ещё не было.
+    Период (`date_from`/`date_to`) фильтрует каждую сущность по её `created_at`.
+    """
+    vacancy = await get_own_vacancy(user, vacancy_id)
+    period = _period_filter(date_from, date_to)
+
+    applications_total = await Application.filter(
+        vacancy_id=vacancy.id, **period
+    ).count()
+    passed_hard_filters = await Application.filter(
+        vacancy_id=vacancy.id, **period
+    ).exclude(
+        status__in=[
+            ApplicationStatus.CREATED,
+            ApplicationStatus.SCREENING,
+            ApplicationStatus.HARD_FILTER_FAILED,
+        ]
+    ).count()
+    invited = await EmployerDecision.filter(
+        application__vacancy_id=vacancy.id, action=DecisionAction.INVITED, **period
+    ).count()
+    mutual_interest = await Match.filter(
+        application__vacancy_id=vacancy.id, **period
+    ).count()
+    interviews = Interview.filter(match__application__vacancy_id=vacancy.id, **period)
+    interviews_booked = await interviews.count()
+    first_interview = await interviews.order_by("created_at").first()
+
+    time_to_first_interview_seconds = (
+        int((first_interview.created_at - vacancy.created_at).total_seconds())
+        if first_interview is not None
+        else None
+    )
+
+    return VacancyAnalyticsResponse(
+        vacancy_id=vacancy.id,
+        applications_total=applications_total,
+        passed_hard_filters=passed_hard_filters,
+        invited=invited,
+        mutual_interest=mutual_interest,
+        interviews_booked=interviews_booked,
+        time_to_first_interview_seconds=time_to_first_interview_seconds,
+    )
+
+
+def _period_filter(
+    date_from: datetime | None, date_to: datetime | None
+) -> dict[str, datetime]:
+    period: dict[str, datetime] = {}
+    if date_from is not None:
+        period["created_at__gte"] = date_from
+    if date_to is not None:
+        period["created_at__lte"] = date_to
+    return period
+
+
+async def get_calibration_profiles(
+    user: User, vacancy_id: int
+) -> CalibrationProfilesResponse:
+    """Синтетические тестовые карточки калибровки (E17 UX-карты, функция 25)."""
+    vacancy = await get_own_vacancy(user, vacancy_id)
+    criteria = await VacancyCriterion.filter(vacancy_id=vacancy.id)
+    profiles = calibration.generate_test_profiles(criteria)
+    return CalibrationProfilesResponse(
+        profiles=[
+            CalibrationProfileRead(
+                pattern_token=profile.pattern_token,
+                criteria=[
+                    CalibrationCriterionRead(
+                        type=item.type, matches=item.matches, value_label=item.value_label
+                    )
+                    for item in profile.criteria
+                ],
+            )
+            for profile in profiles
+        ]
+    )
+
+
+async def submit_calibration(
+    user: User, vacancy_id: int, payload: CalibrationSubmitRequest
+) -> CalibrationWeightsResponse:
+    """Считает веса по решениям работодателя и обновляет их у критериев на
+    месте (`UPDATE`, не `_replace_criteria`) — сами критерии и их `id` не
+    меняются, только `weight`. Логирует `vacancy_calibration_completed`
+    (раздел 60 тех-доки)."""
+    vacancy = await get_own_vacancy(user, vacancy_id)
+    criteria = await VacancyCriterion.filter(vacancy_id=vacancy.id)
+    votes = {vote.pattern_token: vote.fit for vote in payload.votes}
+    weights = calibration.compute_weights(criteria, votes)
+
+    if weights:
+        async with in_transaction() as connection:
+            for criterion in criteria:
+                if criterion.type not in weights:
+                    continue
+                criterion.weight = weights[criterion.type]
+                await criterion.save(using_db=connection, update_fields=["weight"])
+
+        await analytics.log_event(
+            "vacancy_calibration_completed",
+            user_id=user.user_id,
+            payload={
+                "vacancy_id": vacancy.id,
+                "weights": {
+                    criterion_type.value: str(weight)
+                    for criterion_type, weight in weights.items()
+                },
+            },
+        )
+    return CalibrationWeightsResponse(weights=weights)
+
+
+async def create_referral_link(user: User, vacancy_id: int) -> ReferralLinkRead:
+    """Реферальная ссылка на вакансию (R01 UX-карты, функция 32, раздел 68
+    тех-доки). Ссылка ведёт на уже существующий публичный маршрут вакансии
+    (раздел 15) с добавленным источником — отдельный маршрут не заводим.
+
+    Требует опубликованную вакансию: `public_token` появляется только при
+    публикации, а рекомендовать черновик, который ещё никто не видит, нечем.
+    """
+    vacancy = await get_own_vacancy(user, vacancy_id)
+    if vacancy.public_token is None:
+        raise ConflictError(
+            "У вакансии ещё нет публичной ссылки — сначала опубликуйте её",
+            code="vacancy_not_published",
+        )
+
+    for _ in range(REFERRAL_CODE_ATTEMPTS):
+        code = secrets.token_urlsafe(REFERRAL_CODE_BYTES)
+        try:
+            link = await ReferralLink.create(
+                vacancy_id=vacancy.id, source_user_id=user.user_id, code=code
+            )
+        except IntegrityError:
+            logger.warning("Код реферальной ссылки совпал с существующим")
+            continue
+        await analytics.log_event(
+            "referral_link_created",
+            user_id=user.user_id,
+            payload={"vacancy_id": vacancy.id, "code": code},
+        )
+        return _referral_read(link, vacancy)
+    raise ConflictError(
+        "Не удалось создать реферальную ссылку", code="referral_code_unavailable"
+    )
+
+
+async def list_referral_links(user: User, vacancy_id: int) -> ReferralLinkListResponse:
+    """Уже созданные реферальные ссылки вакансии. Не из тех-доки — естественное
+    дополнение к созданию (`POST`), как и списки вакансий/слотов в остальном API."""
+    vacancy = await get_own_vacancy(user, vacancy_id)
+    links = await ReferralLink.filter(vacancy_id=vacancy.id).order_by("-created_at")
+    return ReferralLinkListResponse(
+        items=[_referral_read(link, vacancy) for link in links]
+    )
+
+
+def _referral_read(link: ReferralLink, vacancy: Vacancy) -> ReferralLinkRead:
+    url = _public_url(vacancy)
+    return ReferralLinkRead(
+        code=link.code,
+        url=f"{url}?ref={link.code}" if url else "",
+        created_at=link.created_at,
+    )
+
+
 async def _read(
     vacancy: Vacancy, *, owner: bool, background_tasks: BackgroundTasks | None = None
 ) -> VacancyRead:
@@ -521,11 +722,13 @@ async def _read_many(
 
     `background_tasks`: только для отдачи одной вакансии (`GET /vacancies/{id}`
     и её эквиваленты). Ответ уходит с той ссылкой на фото, что уже сохранена —
-    проверка и подбор новой (`images.ensure_fresh_image`) идут в фоне, после
-    ответа: внешний Openverse не должен быть обязательной частью пути P0
-    (раздел 83), а следующее открытие карточки увидит уже обновлённую ссылку.
-    В списках (лента, кабинет работодателя) фоновая проверка не планируется
-    вовсе — иначе один список запускал бы до `limit` фоновых запросов разом.
+    подбор недостающей (`images.ensure_fresh_image`) идёт в фоне, после ответа:
+    внешний Openverse не должен быть обязательной частью пути P0 (раздел 83).
+    Уже назначенное фото фоновая задача не меняет — следующее открытие
+    карточки увидит либо то же фото, либо впервые найденное, если раньше
+    подбор не удался. В списках (лента, кабинет работодателя) фоновая задача
+    не планируется вовсе — иначе один список запускал бы до `limit` фоновых
+    запросов разом.
     """
     if not vacancies:
         return []

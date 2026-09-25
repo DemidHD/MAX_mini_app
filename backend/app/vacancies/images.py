@@ -10,9 +10,9 @@ API-ключа (docs.openverse.org): страница результатов п�
 PostgreSQL, а тянуть чужой файл на свой диск здесь и вовсе незачем — сам
 Openverse отдаёт постоянные URL с указанием лицензии.
 
-Ошибка поиска или проверки не должна мешать основному сценарию (по аналогии
-с разделом 57 — недоступность ИИ не роняет вакансию, а оставляет её без
-фото): исключения наружу отсюда не выходят.
+Ошибка поиска не должна мешать основному сценарию (по аналогии с разделом
+57 — недоступность ИИ не роняет вакансию, а оставляет её без фото):
+исключения наружу отсюда не выходят.
 """
 
 import logging
@@ -68,37 +68,20 @@ async def find_image(topic: str) -> str | None:
     return random.choice(candidates)
 
 
-async def is_reachable(url: str) -> bool:
-    """Проверяет, что по ссылке ещё что-то отдаётся.
-
-    HEAD быстрее GET и не тянет тело файла; часть хостингов его не
-    поддерживает и отвечает 405 — тогда переспрашиваем через GET с тем же
-    коротким таймаутом, прежде чем считать ссылку мёртвой.
-    """
-    timeout = settings.vacancy_image_liveness_timeout_seconds
-    try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.head(url)
-            if response.status_code == 405:
-                response = await client.get(url)
-            return response.is_success
-    except httpx.HTTPError:
-        return False
-
-
 async def ensure_fresh_image(vacancy: Vacancy) -> str | None:
-    """Отдаёт рабочую ссылку на фото, при необходимости подбирая новую.
+    """Подбирает фото, только если у вакансии его ещё нет.
 
-    Вызывается при отдаче одной вакансии (`GET /vacancies/{id}`): если
-    сохранённая ссылка ещё жива — возвращается она же без повторного поиска;
-    если умерла или её никогда не было — ищется новая и сохраняется в БД, чтобы
-    следующее открытие карточки не искало заново то, что уже нашли только что.
+    Вызывается при отдаче одной вакансии (`GET /vacancies/{id}`). Уже
+    сохранённая ссылка не перепроверяется и не меняется — фото назначается
+    вакансии один раз и дальше не «плавает» между открытиями карточки. Разные
+    вакансии с одной и той же должностью при этом получают фото независимо
+    друг от друга: подбор ничего не кеширует по теме.
     """
-    if vacancy.image_url and await is_reachable(vacancy.image_url):
+    if vacancy.image_url:
         return vacancy.image_url
 
     new_url = await find_image(vacancy.title)
-    if new_url != vacancy.image_url:
+    if new_url:
         vacancy.image_url = new_url
         await vacancy.save(update_fields=["image_url", "updated_at"])
     return new_url

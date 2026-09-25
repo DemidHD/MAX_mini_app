@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # Раздел 78 называет бронирование второй операцией, которой нужна защита
     book_rate_limit_requests: int = 30
     book_rate_limit_window_seconds: int = 60
+    # Приём фронтовых аналитических событий (раздел 60, функция 33 UX-карты) —
+    # не бизнес-операция, но пользователь может слать события на каждый свайп
+    analytics_event_rate_limit_requests: int = 120
+    analytics_event_rate_limit_window_seconds: int = 60
 
     # --- Вакансии ---
     # Ограничение не из тех-доки — продуктовое решение против засорения
@@ -73,9 +77,6 @@ class Settings(BaseSettings):
     openverse_api_url: str = "https://api.openverse.org/v1/images/"
     vacancy_image_candidate_count: int = 20
     vacancy_image_search_timeout_seconds: float = 5.0
-    # Проверка "жива ли ссылка" выполняется синхронно при каждом открытии
-    # карточки вакансии — короткий таймаут, чтобы битый хостинг не подвешивал запрос
-    vacancy_image_liveness_timeout_seconds: float = 3.0
 
     # --- Интервью ---
     # Границы длительности слота тех-дока не задаёт (раздел 22 описывает
@@ -105,6 +106,8 @@ class Settings(BaseSettings):
         "image/png",
         "image/webp",
     ]
+    # Функция 29 UX-карты (C11 «Импорт резюме»)
+    resume_max_size_bytes: int = 10 * 1024 * 1024
 
     # --- AI (P1, раздел 58) ---
     # Общие переменные раздела 71 тех-доки — историческая заглушка под один

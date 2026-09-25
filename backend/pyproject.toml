@@ -17,6 +17,10 @@ dependencies = [
     "tzdata>=2024.1; sys_platform == 'win32'",
     "yandex-ai-studio-sdk>=0.22.1",
     "gigachat>=0.2.3",
+    # Извлечение текста из резюме (функция 29 UX-карты, C11) — оба pure-Python,
+    # без системных зависимостей
+    "pypdf>=5.1",
+    "python-docx>=1.1",
 ]
 
 [dependency-groups]

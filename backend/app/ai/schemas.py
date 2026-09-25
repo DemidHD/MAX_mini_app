@@ -76,3 +76,27 @@ class TranscribeVacancyResponse(BaseModel):
 
     text: str
     provider: str | None
+
+
+class ResumeParsedDraft(BaseModel):
+    """Черновик профиля кандидата, извлечённый из резюме (экран C11
+    UX-карты, функция 29). Поля соответствуют `CandidateProfileUpdateRequest`
+    без валидации диапазонов — как и `ParsedVacancyDraft`, это подсказка,
+    сохраняется только через подтверждённый `PATCH /candidate/profile`."""
+
+    desired_role: str | None = None
+    city: str | None = None
+    salary: Decimal | None = None
+    schedule: str | None = None
+    experience_months: int | None = None
+    available_from: str | None = None
+
+
+class ParseResumeResponse(BaseModel):
+    """`resume parse result никогда не сохраняется как истина без
+    подтверждения» (UX-карта, C11) — черновик всегда возвращается в ответе,
+    профиль кандидата этот вызов не трогает."""
+
+    parsed: ResumeParsedDraft
+    provider: str | None
+    ai_available: bool

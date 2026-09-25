@@ -17,6 +17,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.enums import CriterionType, ScreeningQuestionType, VacancyStatus
+from app.vacancies.calibration import MAX_PROFILES
 from app.core.money import (
     MONEY_DECIMAL_PLACES,
     MONEY_MAX_DIGITS,
@@ -264,6 +265,72 @@ class VacancyListResponse(BaseModel):
     limit: int
     offset: int
     total: int
+
+
+class ReferralLinkRead(BaseModel):
+    """Реферальная ссылка вакансии (экран R01 UX-карты, функция 32)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    code: str
+    url: str
+    created_at: datetime
+
+
+class ReferralLinkListResponse(BaseModel):
+    items: list[ReferralLinkRead]
+
+
+class CalibrationCriterionRead(BaseModel):
+    """Один критерий синтетической тестовой карточки калибровки (E17 UX-карты,
+    функция 25). `value_label` — не персональные данные, а описание условия
+    («Москва», «другой график»)."""
+
+    type: CriterionType
+    matches: bool
+    value_label: str
+
+
+class CalibrationProfileRead(BaseModel):
+    """Синтетическая тестовая карточка. `pattern_token` возвращается в
+    `POST` вместе с решением работодателя — сервер по нему же и считает вес,
+    ничего не сохраняя между запросами."""
+
+    pattern_token: str
+    criteria: list[CalibrationCriterionRead]
+
+
+class CalibrationProfilesResponse(BaseModel):
+    profiles: list[CalibrationProfileRead]
+
+
+class CalibrationVote(BaseModel):
+    pattern_token: str
+    fit: bool
+
+
+class CalibrationSubmitRequest(BaseModel):
+    votes: list[CalibrationVote] = Field(default_factory=list, max_length=MAX_PROFILES)
+
+
+class CalibrationWeightsResponse(BaseModel):
+    """Итоговые веса желательных критериев после калибровки."""
+
+    weights: dict[CriterionType, Decimal]
+
+
+class VacancyAnalyticsResponse(BaseModel):
+    """Сводка аналитики по вакансии (экран E18 UX-карты, функция 33,
+    раздел 69 тех-доки)."""
+
+    vacancy_id: int
+    applications_total: int
+    passed_hard_filters: int
+    invited: int
+    mutual_interest: int
+    interviews_booked: int
+    # `None` — по вакансии ещё нет ни одного собеседования
+    time_to_first_interview_seconds: int | None
 
 
 def _ensure_salary_range(

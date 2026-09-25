@@ -10,6 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Query, Response, status
 from app.applications import employer_service, service
 from app.applications.schemas import (
     ApplicationCreatedResponse,
+    CandidateApplicationListResponse,
     CandidateApplicationRead,
     CandidateListResponse,
     DecisionRequest,
@@ -42,14 +43,18 @@ async def apply(
     user: CandidateUser,
     response: Response,
     background_tasks: BackgroundTasks,
+    ref: str | None = Query(default=None, max_length=100),
 ) -> ApplicationCreatedResponse:
     """Создаёт отклик на вакансию и отправляет его на первичный отбор.
 
     Повторный запрос отклик не дублирует: возвращается существующий, но с
-    кодом `200` вместо `201`.
+    кодом `200` вместо `201`. `ref` — код реферальной ссылки (функция 32
+    UX-карты, R01), необязателен.
     """
     await apply_rate_limiter.check(str(user.user_id))
-    application, created = await service.apply(user, vacancy_id, background_tasks)
+    application, created = await service.apply(
+        user, vacancy_id, background_tasks, referral_code=ref
+    )
     if not created:
         response.status_code = status.HTTP_200_OK
     return ApplicationCreatedResponse(
@@ -58,6 +63,12 @@ async def apply(
         status=application.status,
         created_at=application.created_at,
     )
+
+
+@router.get("", response_model=CandidateApplicationListResponse)
+async def list_my_applications(user: CandidateUser) -> CandidateApplicationListResponse:
+    """Список откликов кандидата (экран C12 UX-карты, функции 27-28)."""
+    return await service.list_my_applications(user)
 
 
 @router.get("/{application_id}", response_model=CandidateApplicationRead)
@@ -108,5 +119,21 @@ async def list_candidates(
 ) -> CandidateListResponse:
     """Кандидаты вакансии, прошедшие первичный отбор."""
     return await employer_service.list_candidates(
+        user, vacancy_id, limit=limit, offset=offset
+    )
+
+
+@employer_router.get(
+    "/vacancies/{vacancy_id}/reserve-candidates", response_model=CandidateListResponse
+)
+async def list_reserved_candidates(
+    vacancy_id: int,
+    user: EmployerUser,
+    limit: int = Query(default=20, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+) -> CandidateListResponse:
+    """Кандидаты из резерва по другим вакансиям, подходящие этой (функция 30
+    UX-карты, E16 в режиме P2)."""
+    return await employer_service.list_reserved_candidates(
         user, vacancy_id, limit=limit, offset=offset
     )
