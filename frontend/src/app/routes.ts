@@ -29,13 +29,20 @@ export const routes = {
   candidateInterview: (vacancyId: Id = ':vacancyId') => `/candidate/vacancies/${vacancyId}/interview`,
   employerHome: '/employer',
   employerVacancyCreate: '/employer/vacancies/new',
+  // P1: создание вакансии свободным текстом (E11), голосом (E13) и
+  // подтверждение разбора ИИ (E12). Ручная форма E02 остаётся fallback.
+  employerVacancyAi: '/employer/vacancies/new/ai',
+  employerVacancyAiCheck: '/employer/vacancies/new/ai/check',
+  employerVacancyVoice: '/employer/vacancies/new/voice',
   employerVacancyCriteria: '/employer/vacancies/new/criteria',
   employerVacancyPreview: '/employer/vacancies/new/preview',
   employerVacancyPublished: '/employer/vacancies/new/published',
   employerVacancyEdit: (vacancyId: Id = ':vacancyId') => `/employer/vacancies/${vacancyId}/edit`,
   employerVacancyList: '/employer/vacancies',
   employerVacancySlots: (vacancyId: Id = ':vacancyId') => `/employer/vacancies/${vacancyId}/slots`,
+  // Доска найма (E15, P1); вакансия выбирается параметром `?vacancy=`.
   employerCandidates: '/employer/candidates',
+  employerReserve: '/employer/reserve',
   employerVacancyCandidates: (vacancyId: Id = ':vacancyId') => `/employer/candidates/${vacancyId}`,
   // Отдельного чтения одного отклика у backend нет: карточка берётся из
   // списка кандидатов вакансии, поэтому в пути есть и вакансия.
@@ -43,6 +50,8 @@ export const routes = {
     `/employer/candidates/${vacancyId}/${applicationId}`,
   employerApplicationInvite: (vacancyId: Id = ':vacancyId', applicationId: Id = ':applicationId') =>
     `/employer/candidates/${vacancyId}/${applicationId}/invite`,
+  employerApplicationReject: (vacancyId: Id = ':vacancyId', applicationId: Id = ':applicationId') =>
+    `/employer/candidates/${vacancyId}/${applicationId}/reject`,
   employerInterview: (vacancyId: Id = ':vacancyId', interviewId: Id = ':interviewId') =>
     `/employer/vacancies/${vacancyId}/interviews/${interviewId}`,
 } as const

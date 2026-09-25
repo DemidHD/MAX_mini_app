@@ -20,10 +20,18 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'processed', label: 'Обработанные' },
 ]
 
-const PROCESSED: ApplicationStatus[] = ['invited', 'rejected', 'mutual_interest', 'interview_scheduled', 'interview_completed']
+const PROCESSED: ApplicationStatus[] = [
+  'reserved',
+  'invited',
+  'rejected',
+  'mutual_interest',
+  'interview_scheduled',
+  'interview_completed',
+]
 
 const STATUS_BADGES: Partial<Record<ApplicationStatus, string>> = {
   passed: 'Новый',
+  reserved: 'В резерве',
   invited: 'Приглашен',
   rejected: 'Отклонен',
   mutual_interest: 'Взаимный интерес',

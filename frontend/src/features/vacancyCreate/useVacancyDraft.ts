@@ -7,6 +7,8 @@ import type { CriterionKey, VacancyDraft } from '@/features/vacancyCreate/draft'
 export interface VacancyDraftContextValue {
   draft: VacancyDraft
   updateDraft: (patch: Partial<VacancyDraft>) => void
+  /** Заменить форму целиком — например, результатом ИИ-разбора (E11/E13). */
+  setDraft: (draft: VacancyDraft) => void
   setCriterionRequired: (key: CriterionKey, required: boolean) => void
   /** `POST` (первый раз) или `PATCH` черновика на сервере. */
   saveDraft: () => Promise<Vacancy>

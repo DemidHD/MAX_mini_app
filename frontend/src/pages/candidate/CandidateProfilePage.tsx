@@ -113,6 +113,17 @@ function ProfileForm({ initial }: { initial: CandidateProfile }) {
           вы ищете?
         </h1>
         <AccentMarks className="profileSetup__marks" />
+        {/* Рукописная заметка со стрелкой — декор из макета C01. */}
+        <span className="profileSetup__note" aria-hidden="true">
+          Больше
+          <br />
+          возможностей
+          <br />
+          рядом
+          <svg className="profileSetup__noteArrow" viewBox="0 0 24 24" fill="none">
+            <path d="M18 3c1 7-3 12-11 14M7 17l1-5M7 17l5 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
       </div>
       <p className="screen__subtitle profileSetup__subtitle">Настроим ленту под вас</p>
 

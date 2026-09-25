@@ -5,21 +5,29 @@
 /* Места под иллюстрации из макета — картинки будут добавлены отдельно. */
 .applicationStatus__art {
   position: absolute;
+  z-index: 0;
+  height: auto;
+  /* Иллюстрации вырезаны из макета на белом — фон растворяется в фоне экрана. */
+  mix-blend-mode: multiply;
   pointer-events: none;
 }
 
+/* Заголовки лежат поверх иллюстрации, как в макете. */
+.applicationStatus > :not(.applicationStatus__art) {
+  position: relative;
+  z-index: 1;
+}
+
 .applicationStatus__art--failed {
-  top: 30px;
+  top: 14px;
   right: 0;
-  width: 170px;
-  height: 160px;
+  width: 180px;
 }
 
 .applicationStatus__art--sent {
-  top: 20px;
-  right: 16px;
-  width: 190px;
-  height: 90px;
+  top: 14px;
+  right: 22px;
+  width: 146px;
 }
 
 .applicationStatus__eyebrow {

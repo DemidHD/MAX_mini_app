@@ -277,6 +277,104 @@ export function TrashIcon({ size = 20, strokeWidth = 1.9 }: IconProps) {
   )
 }
 
+export function MicIcon({ size = 20, strokeWidth = 1.9 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <rect x="8.5" y="2.5" width="7" height="12.5" rx="3.5" stroke="currentColor" strokeWidth={strokeWidth} />
+      <path d="M5 11.5a7 7 0 0 0 14 0M12 18.5v3M8.5 21.5h7" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  )
+}
+
+export function PencilIcon({ size = 20, strokeWidth = 1.9 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M4.5 19.5 5.3 15.6 15.9 5a2.1 2.1 0 0 1 3 3L8.3 18.7l-3.8.8ZM13.8 7.1l3 3" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  )
+}
+
+export function FolderIcon({ size = 20, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M3.5 7a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7Z" stroke="currentColor" strokeWidth={strokeWidth} strokeLinejoin="round" />
+    </Svg>
+  )
+}
+
+export function ChatIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M12 3.8c4.8 0 8.5 3.4 8.5 7.7s-3.7 7.7-8.5 7.7c-1.2 0-2.3-.2-3.3-.6L4 20l1.2-3.8a7.3 7.3 0 0 1-1.7-4.7c0-4.3 3.7-7.7 8.5-7.7Z" stroke="currentColor" strokeWidth={strokeWidth} strokeLinejoin="round" />
+    </Svg>
+  )
+}
+
+/** Закладка с заливкой — «в резерве» / отмечено. */
+export function BookmarkFilledIcon({ size = 20 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M6 5.2c0-1 .8-1.7 1.7-1.7h8.6c1 0 1.7.8 1.7 1.7V21l-6-4.4L6 21V5.2Z" fill="currentColor" />
+    </Svg>
+  )
+}
+
+/** Бумажный самолётик с заливкой — кнопка отправки в поле ввода (E11). */
+export function PaperPlaneIcon({ size = 20 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M4 4.2 20.5 12 4 19.8 7.3 12 4 4.2Z" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+    </Svg>
+  )
+}
+
+/** «Кандидаты» в активном (залитом) состоянии нижнего меню. */
+export function PeopleFilledIcon({ size = 20 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <circle cx="9" cy="7.8" r="3.6" fill="currentColor" />
+      <path d="M2.5 19.2c0-3.6 2.9-6.2 6.5-6.2s6.5 2.6 6.5 6.2c0 .7-.5 1.3-1.2 1.3H3.7c-.7 0-1.2-.6-1.2-1.3Z" fill="currentColor" />
+      <circle cx="16.8" cy="8.3" r="3" fill="currentColor" />
+      <path d="M16.3 13.2c3 .1 5.2 2.4 5.2 5.4 0 .7-.5 1.2-1.2 1.2h-3.1c.2-.4.3-.9.3-1.4 0-2-.5-3.7-1.2-5.2Z" fill="currentColor" />
+    </Svg>
+  )
+}
+
+export function CameraIcon({ size = 20, strokeWidth = 1.9 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M4 8.5A2 2 0 0 1 6 6.5h2l1.5-2h5l1.5 2h2a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8.5Z" stroke="currentColor" strokeWidth={strokeWidth} strokeLinejoin="round" />
+      <circle cx="12" cy="13" r="3.5" stroke="currentColor" strokeWidth={strokeWidth} />
+    </Svg>
+  )
+}
+
+export function GlobeIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth={strokeWidth} />
+      <path d="M3.5 12h17M12 3.5c2.5 2.6 3.5 5.4 3.5 8.5s-1 5.9-3.5 8.5c-2.5-2.6-3.5-5.4-3.5-8.5s1-5.9 3.5-8.5Z" stroke="currentColor" strokeWidth={strokeWidth} strokeLinejoin="round" />
+    </Svg>
+  )
+}
+
+export function AtIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <circle cx="12" cy="12" r="3.5" stroke="currentColor" strokeWidth={strokeWidth} />
+      <path d="M15.5 12v1.3a2.4 2.4 0 0 0 4.8 0V12A8.3 8.3 0 1 0 17 18.6" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  )
+}
+
+export function HashIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M9.5 4 8 20M16 4l-1.5 16M4.5 9h16M3.5 15h16" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  )
+}
+
 /** Иконка сервиса MAX в синей плитке — для строк «уведомление отправлено в MAX». */
 export function MaxChatIcon({ size = 24 }: IconProps) {
   return (

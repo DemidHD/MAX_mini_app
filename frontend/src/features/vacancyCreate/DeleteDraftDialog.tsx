@@ -35,7 +35,7 @@ export function DeleteDraftDialog({
         return
       }
       setError(
-        cause instanceof ApiError && cause.status === 409
+        cause instanceof ApiError && cause.code === 'vacancy_not_draft'
           ? 'Вакансия уже опубликована — удалить её нельзя, только закрыть.'
           : 'Не удалось удалить черновик. Попробуйте еще раз.',
       )

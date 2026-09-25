@@ -8,12 +8,10 @@ import { getEmployerVacancies } from '@/api/hiring'
 import type { Page, Vacancy } from '@/api/hiring'
 import type { User } from '@/api/types'
 import { DRAFT_LIMIT } from '@/api/vacancies'
-import { CoverImage } from '@/components/CoverImage'
-import { TrashIcon } from '@/components/icons'
+import { VacancyCard } from '@/components/VacancyTile'
 import { DeleteDraftDialog, DraftLimitDialog } from '@/features/vacancyCreate/DeleteDraftDialog'
 import { useAsync } from '@/hooks/useAsync'
 import type { AsyncState } from '@/hooks/useAsync'
-import { formatSalaryRange, plural, scheduleLabel } from '@/lib/format'
 import { useAuth } from '@/auth/useAuth'
 import heroPhoto from '@/assets/employer-home-hero.webp'
 import './EmployerHomePage.css'
@@ -59,13 +57,6 @@ function EmployerHome({ user }: { user: User }) {
               )}
             </Avatar.Container>
           </Link>
-
-          {/* Уведомлений на backend ещё нет (P0 — только бот-сообщения, раздел
-              46 тех-доки; экрана со списком уведомлений в API нет вовсе) —
-              иконка декоративная, без обработчика и без выдуманного счётчика. */}
-          <span className="employerHome__bell" aria-hidden="true">
-            <BellIcon />
-          </span>
         </div>
       </header>
 
@@ -93,7 +84,8 @@ function EmployerHome({ user }: { user: User }) {
               Создать вакансию
             </button>
           ) : (
-            <Link to={routes.employerVacancyCreate} state={{ fresh: true }} className="employerHero__cta">
+            // P1: сначала свободный текст (E11); ручная форма E02 — ссылкой оттуда.
+            <Link to={routes.employerVacancyAi} state={{ fresh: true }} className="employerHero__cta">
               Создать вакансию
             </Link>
           )}
@@ -142,21 +134,6 @@ function greetingForNow(): string {
   if (hour < 12) return 'Доброе утро'
   if (hour < 18) return 'Добрый день'
   return 'Добрый вечер'
-}
-
-function BellIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M6 10a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 14 6 10Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M10 19a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  )
 }
 
 function ChevronIcon() {
@@ -208,57 +185,6 @@ function MyVacancies({
       {state.data.items.map((vacancy) => (
         <VacancyCard key={vacancy.id} vacancy={vacancy} onDelete={() => onDelete(vacancy)} />
       ))}
-    </div>
-  )
-}
-
-const STATUS_LABELS: Record<Vacancy['status'], string> = {
-  published: 'Опубликована',
-  draft: 'Черновик',
-  closed: 'Закрыта',
-}
-
-/**
- * Карточка вакансии в ленте «Мои вакансии» с фото вакансии. Опубликованная
- * ведёт к кандидатам, черновик — в форму создания.
- */
-function VacancyCard({ vacancy, onDelete }: { vacancy: Vacancy; onDelete: () => void }) {
-  const count = vacancy.applications_count ?? 0
-  const isDraft = vacancy.status === 'draft'
-  const meta = [vacancy.location, vacancy.schedule ? scheduleLabel(vacancy.schedule) : null].filter(Boolean).join(' · ')
-  const to = isDraft ? routes.employerVacancyEdit(vacancy.id) : routes.employerVacancyCandidates(vacancy.id)
-
-  return (
-    <div className={`vacancyTile photoSlot photoSlot--dark photoSlot--shade${isDraft ? ' vacancyTile--draft' : ''}`}>
-      <CoverImage url={vacancy.image_url} />
-      {/* Ссылка растянута на всю карточку, кнопка удаления лежит поверх неё:
-          вложить кнопку в <a> нельзя. */}
-      <Link
-        to={to}
-        className="vacancyTile__link"
-        aria-label={isDraft ? `Продолжить черновик «${vacancy.title}»` : `Кандидаты вакансии «${vacancy.title}»`}
-      />
-      {isDraft ? (
-        <button type="button" className="vacancyTile__delete" aria-label="Удалить черновик" onClick={onDelete}>
-          <TrashIcon size={18} />
-        </button>
-      ) : null}
-      {vacancy.company_name ? <span className="vacancyTile__company">{vacancy.company_name}</span> : null}
-      <span className="vacancyTile__title">{vacancy.title}</span>
-      <span className="vacancyTile__salary">{formatSalaryRange(vacancy.salary_min, vacancy.salary_max)}</span>
-      {meta ? <span className="vacancyTile__meta">{meta}</span> : null}
-      <span className="vacancyTile__badges">
-        <span className={`vacancyTile__status vacancyTile__status--${vacancy.status}`}>
-          <i aria-hidden="true" />
-          {STATUS_LABELS[vacancy.status]}
-        </span>
-        {count > 0 ? (
-          <span className="vacancyTile__count">
-            {count} {plural(count, 'отклик', 'отклика', 'откликов')}
-          </span>
-        ) : null}
-        {isDraft ? <span className="vacancyTile__continue">Продолжить</span> : null}
-      </span>
     </div>
   )
 }

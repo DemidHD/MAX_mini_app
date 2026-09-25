@@ -1,51 +1,78 @@
+/* Нижнее меню работодателя: белая панель во всю ширину со скруглёнными
+   верхними углами (макеты E15/E16), активный пункт — синий, с залитой иконкой. */
 .employerNav {
   position: sticky;
   bottom: 0;
   z-index: 10;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  margin: 0 16px 16px;
-  padding: 10px 14px;
-  border-radius: 999px;
+  padding: 12px 6px max(14px, env(safe-area-inset-bottom));
+  border-radius: 30px 30px 0 0;
   background: #fff;
-  box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.1), 0 4px 16px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 -6px 26px rgba(20, 30, 60, 0.06);
+  font-family: 'Inter', -apple-system, system-ui, 'Helvetica Neue', Roboto, sans-serif;
 }
 
 .employerNav__item {
   display: flex;
+  flex: 1 1 0;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 9px 10px;
-  border-radius: 999px;
-  color: #8b93a7;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 2px;
+  border-radius: 14px;
+  color: #8e94ab;
   text-decoration: none;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: color 0.15s ease;
+}
+
+.employerNav__item--active {
+  color: #0068fe;
 }
 
 .employerNav__iconWrap {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+}
+
+.employerNav__iconWrap svg {
+  width: 26px;
+  height: 26px;
 }
 
 .employerNav__label {
-  font-size: 11px;
-  font-weight: 600;
+  max-width: 100%;
+  font-size: 13.5px;
+  font-weight: 400;
   line-height: 1;
+  letter-spacing: -0.02em;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Активный пункт — горизонтальная синяя пилюля с иконкой и подписью в ряд,
-   как в референсе; остальные — иконка над подписью, без фона. */
-.employerNav__item--active {
-  flex-direction: row;
-  gap: 7px;
-  padding: 16px 18px;
-  background: var(--button-primary, #007aff);
-  color: #fff;
+@media (max-width: 374px) {
+  .employerNav__label {
+    font-size: 12.5px;
+  }
 }
 
-.employerNav__item--active .employerNav__label {
-  font-size: 13px;
+@media (max-width: 339px) {
+  .employerNav {
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+
+  .employerNav__item {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .employerNav__label {
+    font-size: 11.5px;
+    letter-spacing: -0.03em;
+  }
 }

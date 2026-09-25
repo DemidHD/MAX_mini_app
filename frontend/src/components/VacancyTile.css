@@ -1,0 +1,155 @@
+/* Карточка вакансии работодателя: главная (E01) и раздел «Вакансии». */
+
+.vacancyTile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 183px;
+  padding: 18px 16px 16px;
+  border-radius: 24px;
+  color: #fff;
+  text-decoration: none;
+  scroll-snap-align: start;
+}
+
+.vacancyTile__title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.vacancyTile__salary {
+  margin-top: 6px;
+  font-size: 17px;
+}
+
+.vacancyTile__meta {
+  margin-top: 4px;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.vacancyTile__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 14px;
+}
+
+.vacancyTile__status,
+.vacancyTile__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.vacancyTile__status {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.vacancyTile__status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9aa3b5;
+}
+
+.vacancyTile__status--published {
+  background: rgba(46, 204, 113, 0.18);
+  color: #7ee2a2;
+}
+
+.vacancyTile__status--published i {
+  background: #4cd964;
+}
+
+.vacancyTile__count {
+  background: var(--button-primary, #007aff);
+  color: #fff;
+}
+
+/* Новых нет — только общее число откликов, без акцента. */
+.vacancyTile__count--muted {
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Ссылка на всю карточку; контент поверх неё не перехватывает касания. */
+.vacancyTile__link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+
+.vacancyTile > :not(.vacancyTile__link):not(.vacancyTile__delete):not(.photoSlot__cover) {
+  pointer-events: none;
+}
+
+.vacancyTile__delete {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.vacancyTile__company {
+  margin-bottom: 2px;
+  padding-right: 44px;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.vacancyTile--draft .vacancyTile__title {
+  padding-right: 44px;
+}
+
+.vacancyTile__continue {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  margin-left: auto;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #fff;
+  color: #0b0f2e;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Затемнение под текстом: слева направо (текст прижат влево) и снизу
+   (бейджи). Перекрывает общее вертикальное затенение `.photoSlot--shade`,
+   которого на пёстрых фото не хватало для читаемости. */
+.vacancyTile.photoSlot--shade::after {
+  background:
+    linear-gradient(90deg, rgba(8, 10, 20, 0.82) 0%, rgba(8, 10, 20, 0.6) 45%, rgba(8, 10, 20, 0.12) 85%, rgba(8, 10, 20, 0) 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.45) 100%);
+}
+
+.vacancyTile__company,
+.vacancyTile__title,
+.vacancyTile__salary,
+.vacancyTile__meta {
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}

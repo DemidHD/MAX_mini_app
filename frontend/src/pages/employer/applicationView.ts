@@ -1,3 +1,4 @@
+import { routes } from '@/app/routes'
 import { ApiError } from '@/api/client'
 import { getSlots, getVacancy, getVacancyCandidates } from '@/api/hiring'
 import type { EmployerCandidate, Vacancy } from '@/api/hiring'
@@ -37,4 +38,14 @@ export async function loadApplicationView(
     .map((item) => item.application_id)
   const interviewId = slots?.interviews.find((item) => item.application_id === applicationId)?.id ?? null
   return { vacancy, candidate, items: candidates.items, queue, interviewId }
+}
+
+/**
+ * Куда идти после решения по кандидату: к следующему новому в очереди или
+ * обратно к очереди (UX-карта, «Правила навигации»).
+ */
+export function pathAfterDecision(view: ApplicationView, applicationId: number): string {
+  const position = view.queue.indexOf(applicationId)
+  const next = view.queue.slice(position + 1)[0] ?? view.queue.find((id) => id !== applicationId)
+  return next ? routes.employerApplication(view.vacancy.id, next) : routes.employerVacancyCandidates(view.vacancy.id)
 }

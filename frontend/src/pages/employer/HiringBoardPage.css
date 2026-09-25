@@ -1,0 +1,341 @@
+/* E15 «Доска найма». */
+
+.board {
+  min-height: auto;
+  padding-bottom: 28px;
+  background: #f5f7fd;
+}
+
+.board__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+}
+
+.board__vacancy {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--p1-muted);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.board__vacancy:disabled {
+  cursor: default;
+}
+
+.board__tools {
+  display: flex;
+  gap: 10px;
+  margin-right: -2px;
+}
+
+.board__tools .p1IconButton {
+  width: 40px;
+  height: 40px;
+}
+
+.board__title {
+  margin-top: 0;
+  font-size: clamp(36px, 11.4vw, 45px);
+}
+
+.board__search {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 14px;
+  padding: 0 16px;
+  border: 1px solid var(--p1-line);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--p1-ink);
+  font-size: 16px;
+  outline: none;
+}
+
+.board__search:focus {
+  border-color: var(--p1-blue);
+}
+
+.board__tabs {
+  display: flex;
+  gap: 6px;
+  margin: 15px -20px 0;
+  padding: 0 20px 10px 13px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.board__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.board__tab {
+  flex-shrink: 0;
+  min-height: 37px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 16px;
+  background: #edf1f7;
+  color: #6c7288;
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.board__tab--active {
+  background: var(--p1-blue);
+  color: #fff;
+  font-weight: 500;
+  box-shadow: 0 8px 18px rgba(0, 104, 254, 0.26);
+}
+
+/* Лента дней: тонкая вертикальная линия за карточками, точка у каждой даты. */
+.board__timeline {
+  position: relative;
+  margin-top: 9px;
+}
+
+.board__timeline::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  bottom: 40px;
+  left: 7px;
+  width: 1.5px;
+  background: #dfe3ec;
+}
+
+.board__group + .board__group {
+  margin-top: 30px;
+}
+
+.board__day {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  min-height: 26px;
+  margin: 0 0 12px;
+  font-size: 14.5px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--p1-muted);
+}
+
+.board__dot {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  margin-left: 1.5px;
+  border: 1.5px solid #b8bfcf;
+  border-radius: 50%;
+  background: #f5f7fd;
+}
+
+.board__dot--current {
+  width: 12px;
+  height: 12px;
+  margin-left: 1px;
+  border: none;
+  background: var(--p1-blue);
+}
+
+.boardCard {
+  position: relative;
+  padding: 13px 14px 4px 13px;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: var(--p1-card-shadow);
+}
+
+.boardCard + .boardCard {
+  margin-top: 12px;
+}
+
+.boardCard__main {
+  display: flex;
+  gap: 15px;
+}
+
+.boardCard__photo {
+  display: block;
+  width: 120px;
+  height: 148px;
+  flex-shrink: 0;
+  border-radius: 16px;
+  object-fit: cover;
+  background: #dfe4ec;
+}
+
+.boardCard__info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.boardCard__nameRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.boardCard__name {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.boardCard__more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-right: -2px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--p1-ink);
+  cursor: pointer;
+}
+
+.boardCard__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.boardCard__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #f0f2f9;
+  color: #5c6378;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.boardCard__chip--day {
+  background: var(--p1-blue-soft);
+  color: var(--p1-blue);
+  font-weight: 500;
+}
+
+.boardCard__time {
+  margin-top: 10px;
+  font-size: clamp(36px, 11vw, 42px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+}
+
+.boardCard__value {
+  margin-top: 12px;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+
+.boardCard__role {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+  padding-bottom: 12px;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+  color: var(--p1-text);
+}
+
+.boardCard__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  margin: 13px 0 0;
+  padding: 0 0 0 1px;
+  border-top: 1px solid #ebf0f9;
+}
+
+.boardCard__action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--p1-text);
+  font-size: 14px;
+  letter-spacing: -0.025em;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.boardCard__action svg {
+  flex-shrink: 0;
+  color: var(--p1-ink);
+}
+
+.boardCard__action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.board__empty {
+  margin-top: 12px;
+}
+
+@media (max-width: 374px) {
+  .boardCard__main {
+    gap: 12px;
+  }
+
+  .boardCard__photo {
+    width: 92px;
+    height: 124px;
+  }
+
+  .boardCard__name {
+    font-size: 17.5px;
+  }
+
+  .boardCard__action {
+    gap: 5px;
+    font-size: 13.5px;
+  }
+
+  .boardCard__action svg {
+    width: 20px;
+    height: 20px;
+  }
+}

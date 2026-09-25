@@ -1,0 +1,72 @@
+.avatarEditor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatarEditor__photo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 92px;
+  height: 92px;
+  padding: 0;
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff8a5c, #ff3d7f);
+  box-shadow: 0 10px 24px rgba(0, 40, 120, 0.25);
+  cursor: pointer;
+}
+
+.avatarEditor__photo img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatarEditor__photo--busy {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.avatarEditor__initials {
+  color: #fff;
+  font-size: 38px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.avatarEditor__camera {
+  position: absolute;
+  right: -4px;
+  bottom: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #0b0f2e;
+  color: #fff;
+}
+
+.avatarEditor__delete {
+  padding: 2px 6px;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.avatarEditor__delete:disabled {
+  opacity: 0.5;
+}

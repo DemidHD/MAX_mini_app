@@ -284,3 +284,33 @@
 .vacancyBasics__delete:disabled {
   opacity: 0.5;
 }
+
+.vacancyField__sizer {
+  display: inline-grid;
+  min-width: 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.vacancyField__sizer::after {
+  content: attr(data-value);
+  grid-area: 1 / 1;
+  visibility: hidden;
+  white-space: pre;
+  font: inherit;
+}
+
+.vacancyField__input--money {
+  grid-area: 1 / 1;
+  width: 100%;
+  font-size: 22px;
+}
+
+/* Знак рубля после суммы — отдельно от поля, чтобы не мешать вводу. */
+.vacancyField__suffix {
+  flex: 1;
+  margin-left: 7px;
+  font-size: 22px;
+  font-weight: 800;
+  color: #0b0f2e;
+}

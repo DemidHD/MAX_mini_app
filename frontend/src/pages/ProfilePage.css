@@ -1,0 +1,281 @@
+/* Профиль пользователя — в стиле экранов P0/P1: крупный заголовок, синяя
+   карточка как баннер главной E01, поля как в форме вакансии E02. */
+
+.profilePage {
+  min-height: auto;
+  padding-bottom: 24px;
+  background: #f5f7fd;
+}
+
+.profilePage__eyebrow {
+  margin-top: 6px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--p1-blue);
+}
+
+.profilePage__title {
+  margin-top: 4px;
+}
+
+/* Синяя карточка с фото: как «Быстрый старт» на главной работодателя. */
+.profileHero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 20px;
+  padding: 22px 20px 18px;
+  border-radius: 28px;
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 55%),
+    var(--p1-blue);
+  box-shadow: 0 20px 40px rgba(0, 90, 220, 0.26);
+  color: #fff;
+  overflow: hidden;
+}
+
+.profileHero__marks {
+  top: 12px;
+  right: 16px;
+}
+
+.profileHero__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding-bottom: 22px;
+}
+
+.profileHero__name {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.profileHero__role {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  font-size: 14px;
+  font-weight: 500;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Быстрые переходы работодателя. */
+.profileShortcuts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.profileShortcut {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 14px 14px 16px;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: var(--p1-card-shadow);
+  color: var(--p1-ink);
+  text-decoration: none;
+}
+
+.profileShortcut__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  background: #eef1f7;
+  color: var(--p1-ink);
+}
+
+.profileShortcut--accent .profileShortcut__icon {
+  background: var(--p1-blue-soft);
+  color: var(--p1-blue);
+}
+
+.profileShortcut__value {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.profileShortcut__label {
+  font-size: 14px;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--p1-muted);
+}
+
+.profilePage__section {
+  margin: 26px 0 12px 2px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+/* Поле имени — как карточки формы вакансии E02. */
+.profileField {
+  display: block;
+  margin-bottom: 10px;
+  padding: 13px 16px 14px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--p1-card-shadow);
+  cursor: text;
+}
+
+.profileField__label {
+  display: block;
+  font-size: 13px;
+  color: var(--p1-muted);
+}
+
+.profileField__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.profileField__input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--p1-ink);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  outline: none;
+}
+
+.profileField__input::placeholder {
+  color: #c6ccd8;
+  font-weight: 600;
+}
+
+.profileField__clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #eef1f6;
+  color: #6c7288;
+  cursor: pointer;
+}
+
+.profilePage__message {
+  margin: 4px 0 0;
+}
+
+.profilePage__saved {
+  margin: 4px 0 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #e3f7ec;
+  color: #18894f;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.profilePage__save {
+  margin-top: 14px;
+}
+
+/* Данные аккаунта MAX — одна карточка со строками. */
+.profileInfo {
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: var(--p1-card-shadow);
+  overflow: hidden;
+}
+
+.profileInfo__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 0 16px;
+}
+
+.profileInfo__row + .profileInfo__row {
+  border-top: 1px solid #eef1f6;
+}
+
+.profileInfo__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #eef1f7;
+  color: var(--p1-ink);
+}
+
+.profileInfo__label {
+  flex: 1;
+  font-size: 15px;
+  letter-spacing: -0.015em;
+  color: var(--p1-text);
+}
+
+.profileInfo__value {
+  max-width: 50%;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--p1-ink);
+}
+
+.profilePage__note {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--p1-muted);
+}
+
+@media (max-width: 374px) {
+  .profileHero {
+    gap: 14px;
+    padding: 20px 16px 16px;
+  }
+
+  /* На узком экране «искры» наезжали бы на имя. */
+  .profileHero__marks {
+    display: none;
+  }
+
+  .profileHero .avatarEditor__photo {
+    width: 76px;
+    height: 76px;
+  }
+
+  .profileHero__name {
+    font-size: 22px;
+  }
+}

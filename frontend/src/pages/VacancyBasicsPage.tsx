@@ -94,14 +94,14 @@ export function VacancyBasicsPage() {
             label="Зарплата от"
             value={draft.salaryMin}
             placeholder="0"
-            type="number"
+            type="money"
             onChange={(value) => updateDraft({ salaryMin: value })}
           />
           <VacancyTextField
             label="Зарплата до"
             value={draft.salaryMax}
             placeholder="0"
-            type="number"
+            type="money"
             onChange={(value) => updateDraft({ salaryMax: value })}
           />
         </div>
@@ -226,25 +226,46 @@ function VacancyTextField({
   label: string
   value: string
   placeholder: string
-  type?: 'text' | 'number'
+  /** `money` — сумма в рублях: в поле «80 000», в черновике только цифры. */
+  type?: 'text' | 'money'
   maxLength?: number
   onChange: (value: string) => void
 }) {
+  const money = type === 'money'
+  const shown = money && value ? Number(value).toLocaleString('ru-RU') : value
+  const input = (
+    <input
+      className={`vacancyField__input${money ? ' vacancyField__input--money' : ''}`}
+      type="text"
+      inputMode={money ? 'numeric' : undefined}
+      value={shown}
+      placeholder={placeholder}
+      maxLength={maxLength}
+      aria-label={label}
+      onChange={(event) =>
+        onChange(money ? event.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 9) : event.target.value)
+      }
+    />
+  )
+
   return (
     <div className="vacancyField">
       <span className="vacancyField__label">{label}</span>
       <div className="vacancyField__row">
-        <input
-          className="vacancyField__input"
-          type={type}
-          inputMode={type === 'number' ? 'numeric' : undefined}
-          min={type === 'number' ? 0 : undefined}
-          value={value}
-          placeholder={placeholder}
-          maxLength={maxLength}
-          aria-label={label}
-          onChange={(event) => onChange(event.target.value)}
-        />
+        {money ? (
+          // Поле суммы по ширине числа (невидимая копия текста задаёт ширину) —
+          // «₽» стоит сразу после суммы, как в макете.
+          <span className="vacancyField__sizer" data-value={shown || placeholder}>
+            {input}
+          </span>
+        ) : (
+          input
+        )}
+        {money && value ? (
+          <span className="vacancyField__suffix" aria-hidden="true">
+            ₽
+          </span>
+        ) : null}
         {value ? (
           <button
             type="button"

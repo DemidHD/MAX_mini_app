@@ -1,8 +1,8 @@
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
-import { getScreening, getVacancy } from '@/api/hiring'
-import type { ApplicationStatus, CriterionType, ScreeningResult, ScreeningState, Vacancy } from '@/api/hiring'
+import { getApplication, getScreening } from '@/api/hiring'
+import type { ApplicationStatus, CandidateApplication, ScreeningResult, ScreeningState, Vacancy } from '@/api/hiring'
 import { BackButton } from '@/components/BackButton'
 import { CoverImage } from '@/components/CoverImage'
 import { ErrorScreen } from '@/components/ErrorScreen'
@@ -12,6 +12,8 @@ import { BellIcon, BookmarkIcon, ClockIcon, InfoIcon } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
 import { CRITERION_MISMATCH_REASONS, CRITERION_TITLES, criterionLabel, formatSalaryRange, plural } from '@/lib/format'
 import artCalendar from '@/assets/art-calendar.webp'
+import artMismatch from '@/assets/art-mismatch.webp'
+import artPlane from '@/assets/art-plane.webp'
 import './ApplicationStatusPage.css'
 
 /**
@@ -20,17 +22,20 @@ import './ApplicationStatusPage.css'
  * обязательное условие» или C07 «Отклик ожидает решения»; при взаимном
  * интересе и назначенном интервью уводит в M01 / C10.
  *
- * Отдельного чтения отклика у backend нет: статус и вакансию даёт
- * `GET /applications/{id}/screening`, саму вакансию — `GET /vacancies/{id}`.
+ * Статус, вакансию и несовпавшие условия даёт `GET /applications/{id}`;
+ * вопросы отбора (`GET .../screening`) нужны, чтобы назвать отсекающий
+ * вопрос сразу после отправки ответов.
  */
 export function ApplicationStatusPage() {
   const applicationId = Number(useParams().applicationId)
   const navigate = useNavigate()
   const submitted = (useLocation().state as { screening?: ScreeningResult } | null)?.screening
   const { state, reload } = useAsync(async (signal) => {
-    const screening = await getScreening(applicationId, signal)
-    const vacancy = await getVacancy(screening.vacancy_id, signal)
-    return { screening, vacancy }
+    const [application, screening] = await Promise.all([
+      getApplication(applicationId, signal),
+      getScreening(applicationId, signal),
+    ])
+    return { application, screening }
   }, [applicationId])
 
   if (state.status === 'loading') return <LoadingScreen />
@@ -38,39 +43,45 @@ export function ApplicationStatusPage() {
     return <ErrorScreen error={state.error} onRetry={reload} onBack={() => navigate(routes.candidateFeed)} />
   }
 
-  const { screening, vacancy } = state.data
-  switch (screening.status) {
+  const { application, screening } = state.data
+  const { vacancy } = application
+  switch (application.status) {
     case 'created':
     case 'screening':
       return <Navigate to={routes.candidateScreeningStart(applicationId)} replace />
     case 'hard_filter_failed':
-      return <HardFilterFailed screening={screening} vacancy={vacancy} submitted={submitted} />
+      return (
+        <HardFilterFailed application={application} screening={screening} vacancy={vacancy} submitted={submitted} />
+      )
     case 'mutual_interest':
       return <Navigate to={routes.candidateMatch(vacancy.id)} replace />
     case 'interview_scheduled':
     case 'interview_completed':
       return <Navigate to={routes.candidateInterview(vacancy.id)} replace />
     default:
-      return <ApplicationPending status={screening.status} vacancy={vacancy} />
+      return <ApplicationPending status={application.status} vacancy={vacancy} />
   }
 }
 
 /**
  * C06: нейтральный итог без оценки личности — причина на уровне требования.
- * Список несовпавших условий backend отдаёт только в ответе на отправку
- * отбора; при повторном открытии экрана причина показывается обобщённо.
+ * Несовпавшие условия backend отдаёт и при повторном открытии
+ * (`failed_criteria` в `GET /applications/{id}`). Отсекающий вопрос отбора
+ * известен только из ответа на отправку — после перезагрузки его нет.
  */
 function HardFilterFailed({
+  application,
   screening,
   vacancy,
   submitted,
 }: {
+  application: CandidateApplication
   screening: ScreeningState
   vacancy: Vacancy
   submitted?: ScreeningResult
 }) {
   const navigate = useNavigate()
-  const failed: CriterionType[] = submitted?.failed_criteria ?? []
+  const failed = submitted?.failed_criteria ?? application.failed_criteria
   const failedQuestion = screening.questions.find((question) => submitted?.failed_questions.includes(question.id))
   const first = failed[0]
   const criterion = vacancy.criteria.find((item) => item.type === first)
@@ -80,8 +91,7 @@ function HardFilterFailed({
   return (
     <div className="screen applicationStatus applicationStatus--failed">
       <BackButton onClick={() => navigate(routes.candidateFeed)} />
-      {/* Место под иллюстрацию из макета — добавится отдельно. */}
-      <span className="applicationStatus__art applicationStatus__art--failed" aria-hidden="true" />
+      <img className="applicationStatus__art applicationStatus__art--failed" src={artMismatch} alt="" aria-hidden="true" />
 
       <span className="screen__eyebrow applicationStatus__eyebrow">Результат</span>
       <h1 className="screen__title applicationStatus__title">
@@ -150,7 +160,7 @@ function ApplicationPending({ status, vacancy }: { status: ApplicationStatus; va
   return (
     <div className="screen applicationStatus">
       <BackButton onClick={() => navigate(routes.candidateFeed)} />
-      <span className="applicationStatus__art applicationStatus__art--sent" aria-hidden="true" />
+      <img className="applicationStatus__art applicationStatus__art--sent" src={artPlane} alt="" aria-hidden="true" />
 
       <h1 className="screen__title applicationStatus__sentTitle">Отклик отправлен</h1>
       <p className="screen__subtitle applicationStatus__sentSubtitle">Теперь решение за работодателем</p>

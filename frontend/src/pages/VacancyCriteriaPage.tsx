@@ -8,7 +8,21 @@ import { useVacancyDraft } from '@/features/vacancyCreate/useVacancyDraft'
 import { VacancyStepHeader } from '@/features/vacancyCreate/VacancyStepHeader'
 import { availableFromLabel, experienceLabel } from '@/features/vacancyCreate/draft'
 import type { CriterionKey } from '@/features/vacancyCreate/draft'
+import criterionSchedule from '@/assets/criterion-schedule.webp'
+import criterionLocation from '@/assets/criterion-location.webp'
+import criterionExperience from '@/assets/criterion-experience.webp'
+import criterionAvailableFrom from '@/assets/criterion-available-from.webp'
+import criterionSalary from '@/assets/criterion-salary.webp'
 import './VacancyCriteriaPage.css'
+
+/** Фото-превью справа в карточке условия — оформление из макета E03. */
+const CRITERION_ART: Record<CriterionKey, string> = {
+  schedule: criterionSchedule,
+  location: criterionLocation,
+  experience: criterionExperience,
+  available_from: criterionAvailableFrom,
+  salary: criterionSalary,
+}
 
 interface CriterionRow {
   key: CriterionKey
@@ -74,6 +88,7 @@ export function VacancyCriteriaPage() {
         <div className="vacancyCriteria__list">
           {rows.map((row) => (
             <div className="criterionCard" key={row.key}>
+              <img className="criterionCard__art" src={CRITERION_ART[row.key]} alt="" aria-hidden="true" />
               <div className="criterionCard__top">
                 <span className="criterionCard__icon">{row.icon}</span>
                 <span className="criterionCard__text">

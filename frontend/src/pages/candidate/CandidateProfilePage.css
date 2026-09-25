@@ -19,6 +19,28 @@
   right: 34px;
 }
 
+.profileSetup__note {
+  position: absolute;
+  right: -6px;
+  bottom: -46px;
+  width: 78px;
+  transform: rotate(-12deg);
+  font-family: 'Caveat', cursive;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 0.95;
+  text-align: center;
+  color: #4b5268;
+  pointer-events: none;
+}
+
+.profileSetup__noteArrow {
+  display: block;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0 26px;
+}
+
 .profileSetup__subtitle {
   margin-top: 10px;
   font-size: 18px;

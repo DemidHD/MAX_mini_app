@@ -6,13 +6,14 @@ import { ApiError, api } from '@/api/client'
  * ответов — `docs/api-contracts.md`.
  */
 
-/** Раздел 17 тех-доки. `reserved` появится вместе с P1. */
+/** Раздел 17 тех-доки; `reserved` — функция «Резерв» (P1, раздел 20). */
 export type ApplicationStatus =
   | 'created'
   | 'screening'
   | 'hard_filter_failed'
   | 'passed'
   | 'under_review'
+  | 'reserved'
   | 'rejected'
   | 'invited'
   | 'mutual_interest'
@@ -122,6 +123,24 @@ export interface ScreeningResult {
   failed_questions: number[]
 }
 
+/**
+ * `GET /api/applications/{id}` — отклик глазами кандидата (C06/C07).
+ * `failed_criteria` восстанавливается из снимка отбора, поэтому причина
+ * отказа переживает перезагрузку экрана.
+ */
+export interface CandidateApplication {
+  id: number
+  vacancy_id: number
+  status: ApplicationStatus
+  created_at: string
+  vacancy: Vacancy
+  failed_criteria: CriterionType[]
+  /** Есть после взаимного интереса. */
+  match_id: number | null
+  /** Есть после назначенного интервью. */
+  interview_id: number | null
+}
+
 /** Элемент `GET /api/employer/vacancies/{id}/candidates`. */
 export interface EmployerCandidate {
   application_id: number
@@ -140,14 +159,25 @@ export interface EmployerCandidate {
     value: string | number | boolean | null
   }[]
   hard_filters: { type: CriterionType; required: boolean; passed: boolean | null }[]
+  /** Объяснимость подбора (P1, раздел 64): совпавшие условия и опыт против требования. */
+  explanation?: {
+    matched: CriterionType[]
+    experience: { candidate: number | null; required: number | null } | null
+  }
 }
+
+/** Действие работодателя (раздел 20). `reserved` — P1. */
+export type DecisionAction = 'invited' | 'rejected' | 'reserved'
+
+/** Причины отказа (раздел 20), экран E14. */
+export type RejectReason = 'experience' | 'salary' | 'schedule' | 'location' | 'available_from' | 'other'
 
 /** `POST /api/applications/{id}/decision`. */
 export interface DecisionResult {
   application_id: number
   status: ApplicationStatus
-  action: 'invited' | 'rejected'
-  reject_reason: string | null
+  action: DecisionAction
+  reject_reason: RejectReason | null
   match_id: number | null
   decided_at: string
 }
@@ -220,6 +250,10 @@ export function applyToVacancy(vacancyId: number, signal?: AbortSignal) {
   return api.post<ApplicationSummary>(`/vacancies/${vacancyId}/apply`, undefined, signal)
 }
 
+export function getApplication(applicationId: number, signal?: AbortSignal) {
+  return api.get<CandidateApplication>(`/applications/${applicationId}`, signal)
+}
+
 export function getScreening(applicationId: number, signal?: AbortSignal) {
   return api.get<ScreeningState>(`/applications/${applicationId}/screening`, signal)
 }
@@ -243,9 +277,18 @@ export function getVacancyCandidates(vacancyId: number, signal?: AbortSignal) {
   return api.get<Page<EmployerCandidate>>(`/employer/vacancies/${vacancyId}/candidates?limit=50`, signal)
 }
 
-/** Приглашение сразу создаёт взаимный интерес и возвращает `match_id`. */
-export function decide(applicationId: number, action: 'invited' | 'rejected', signal?: AbortSignal) {
-  return api.post<DecisionResult>(`/applications/${applicationId}/decision`, { action }, signal)
+/**
+ * Приглашение сразу создаёт взаимный интерес и возвращает `match_id`.
+ * `rejectReason` — только вместе с отказом и необязательна (E14).
+ */
+export function decide(
+  applicationId: number,
+  action: DecisionAction,
+  rejectReason: RejectReason | null = null,
+  signal?: AbortSignal,
+) {
+  const body = action === 'rejected' && rejectReason ? { action, reject_reason: rejectReason } : { action }
+  return api.post<DecisionResult>(`/applications/${applicationId}/decision`, body, signal)
 }
 
 export function getSlots(vacancyId: number, signal?: AbortSignal) {

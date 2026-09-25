@@ -1,0 +1,250 @@
+/* E16 «Резерв». */
+
+.reserve {
+  min-height: auto;
+  padding-bottom: 28px;
+  background: #fcfdfe;
+}
+
+.reserve__head {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 42px;
+}
+
+.reserve__head .p1IconButton {
+  width: 40px;
+  height: 40px;
+  margin-right: -2px;
+}
+
+.reserve__title {
+  margin-top: 8px;
+  font-size: clamp(40px, 12vw, 47px);
+}
+
+.reserve__subtitle {
+  margin-top: 8px;
+  font-size: 17px;
+  letter-spacing: -0.025em;
+}
+
+.reserve__search {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 14px;
+  padding: 0 16px;
+  border: 1px solid var(--p1-line);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--p1-ink);
+  font-size: 16px;
+  outline: none;
+}
+
+.reserve__search:focus {
+  border-color: var(--p1-blue);
+}
+
+/* Карусель: карточки 152px, следующая выглядывает справа. */
+.reserve__track {
+  display: flex;
+  gap: 8px;
+  margin: 24px -20px 0;
+  padding: 0 16px 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 0 16px;
+  scrollbar-width: none;
+}
+
+.reserve__track::-webkit-scrollbar {
+  display: none;
+}
+
+.reserveCard {
+  display: flex;
+  flex: 0 0 152px;
+  flex-direction: column;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--p1-card-shadow);
+  scroll-snap-align: start;
+  overflow: hidden;
+}
+
+.reserveCard__photo {
+  position: relative;
+  height: 220px;
+  border-radius: 20px 20px 16px 16px;
+  background: #dfe4ec;
+  overflow: hidden;
+}
+
+.reserveCard__photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.reserveCard__mark {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  color: #8e94ab;
+  box-shadow: 0 4px 12px rgba(10, 13, 38, 0.12);
+  cursor: pointer;
+}
+
+.reserveCard__mark--on {
+  color: var(--p1-blue);
+}
+
+.reserveCard__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 13px 10px 10px;
+}
+
+.reserveCard__name {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+}
+
+.reserveCard__role {
+  margin-top: 4px;
+  font-size: 13.5px;
+  letter-spacing: -0.02em;
+  color: var(--p1-muted);
+}
+
+.reserveCard__fact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  font-size: 13px;
+  letter-spacing: -0.02em;
+  color: #6c7288;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.reserveCard__fact svg {
+  flex-shrink: 0;
+  color: var(--p1-ink);
+}
+
+.reserveCard__tag {
+  margin-top: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.reserveCard__tag--blue {
+  background: #dfebfd;
+  color: var(--p1-blue);
+}
+
+.reserveCard__tag--green {
+  background: #d7f5e8;
+  color: #18894f;
+}
+
+.reserveCard__tag--gray {
+  background: #eceff6;
+  color: #4d5469;
+}
+
+.reserveCard__date {
+  align-self: stretch;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid #edf0f6;
+  font-size: 13px;
+  letter-spacing: -0.025em;
+  color: var(--p1-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reserveCard__open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  min-height: 38px;
+  margin-top: 11px;
+  border-radius: 999px;
+  background: var(--p1-blue);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.reserve__dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.reserve__dot {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #e5eaf4;
+  cursor: pointer;
+}
+
+.reserve__dot--active {
+  background: var(--p1-blue);
+}
+
+.reserve__banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 30px -4px 0;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: #eef4fe;
+  color: #6c7288;
+  font-size: 14px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.reserve__banner svg {
+  flex-shrink: 0;
+  color: #8e94ab;
+}
+
+.reserve__empty {
+  margin-top: 12px;
+}

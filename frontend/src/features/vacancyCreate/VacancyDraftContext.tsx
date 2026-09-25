@@ -95,8 +95,18 @@ export function VacancyDraftProvider({ children }: { children: ReactNode }) {
   const openDraft = useCallback((vacancy: Vacancy) => setDraft(draftFromVacancy(vacancy)), [setDraft])
 
   const value = useMemo(
-    () => ({ draft, updateDraft, setCriterionRequired, saveDraft, publish, startNew, openDraft, publishedVacancy }),
-    [draft, updateDraft, setCriterionRequired, saveDraft, publish, startNew, openDraft, publishedVacancy],
+    () => ({
+      draft,
+      updateDraft,
+      setDraft,
+      setCriterionRequired,
+      saveDraft,
+      publish,
+      startNew,
+      openDraft,
+      publishedVacancy,
+    }),
+    [draft, updateDraft, setDraft, setCriterionRequired, saveDraft, publish, startNew, openDraft, publishedVacancy],
   )
 
   return <VacancyDraftContext.Provider value={value}>{children}</VacancyDraftContext.Provider>

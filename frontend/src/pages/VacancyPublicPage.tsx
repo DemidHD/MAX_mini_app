@@ -1,8 +1,9 @@
-import { useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
 import { getPublicVacancy } from '@/api/vacancies'
 import { BackButton } from '@/components/BackButton'
+import { CoverImage } from '@/components/CoverImage'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { LoadingScreen } from '@/components/LoadingScreen'
 import { criterionIcon, criterionLabel, splitCriteria, vacancyFacts } from '@/components/VacancyFacts'
@@ -12,42 +13,46 @@ import { formatSalaryRange } from '@/lib/format'
 import '@/pages/candidate/VacancyDetailsPage.css'
 
 /**
- * Публичная ссылка на вакансию `{APP_URL}/v/{token}` (раздел 15 тех-доки).
+ * Публичная ссылка на вакансию `{APP_URL}/v/{token}` (раздел 15 тех-доки,
+ * `GET /vacancies/public/{token}`).
  *
- * В отличие от C03 (`VacancyDetailsPage`), сюда попадают по прямой ссылке —
- * без прохода через `RootRedirect`, поэтому сессия MAX ещё может не успеть
- * подняться (`AuthProvider` авторизуется асинхронно при монтировании
- * приложения). Экран ждёт `authenticated` сам, а не полагается на layout.
- *
- * Отклика с этого экрана нет: сценарий отклика в P0 завязан на моковые данные
- * (`mocks/demoApi.ts`), а эта страница ходит в настоящий backend — смешивать
- * их означало бы обещать действие, которое ни к чему не приведёт.
+ * Сюда попадают по прямой ссылке; вход в MAX к этому моменту уже выполнен
+ * общим шлюзом `AppLayout`. Дальше — по роли:
+ * - кандидат сразу уходит на C03 по id вакансии: там настоящий отклик и
+ *   обработка закрытой вакансии (правило видимости у эндпоинтов одинаковое);
+ * - работодатель видит карточку, а свою вакансию может открыть в кандидатах;
+ * - без роли (`role = NULL`) карточка ведёт на выбор роли — роль назначает
+ *   только пользователь (раздел 9).
  */
 export function VacancyPublicPage() {
   const token = useParams().token ?? ''
   const navigate = useNavigate()
-  const { state: authState, refresh } = useAuth()
-  const authenticated = authState.status === 'authenticated'
+  const { state: authState } = useAuth()
+  const { state, reload } = useAsync((signal) => getPublicVacancy(token, signal), [token])
 
-  const { state, reload } = useAsync(
-    (signal) => (authenticated ? getPublicVacancy(token, signal) : new Promise<never>(() => {})),
-    [token, authenticated],
-  )
-
-  if (authState.status === 'error') {
-    return <ErrorScreen error={authState.error} onRetry={() => void refresh()} />
-  }
-  if (!authenticated || state.status === 'loading') return <LoadingScreen />
+  if (authState.status !== 'authenticated' || state.status === 'loading') return <LoadingScreen />
   if (state.status === 'error') {
     return <ErrorScreen error={state.error} onRetry={reload} onBack={() => navigate(routes.root)} />
   }
 
   const vacancy = state.data
+  const { user } = authState
+  if (user.role === 'candidate') {
+    return <Navigate to={routes.candidateVacancy(vacancy.id)} replace />
+  }
+
   const { required, desired } = splitCriteria(vacancy.criteria)
+  const own = user.role === 'employer' && vacancy.employer_id === user.user_id
+  const action = own
+    ? { label: 'Кандидаты вакансии', to: routes.employerVacancyCandidates(vacancy.id) }
+    : user.role === null
+      ? { label: 'Откликнуться', to: routes.roleSelection }
+      : { label: 'На главную', to: routes.root }
 
   return (
     <div className="screen vacancyDetails">
-      <header className="vacancyDetails__hero photoSlot photoSlot--dark">
+      <header className="vacancyDetails__hero photoSlot photoSlot--dark photoSlot--shade">
+        <CoverImage url={vacancy.image_url} />
         <div className="vacancyDetails__heroTop">
           <BackButton variant="glass" onClick={() => navigate(routes.root)} />
         </div>
@@ -80,8 +85,11 @@ export function VacancyPublicPage() {
 
         <div className="screen__spacer" />
 
-        <button type="button" className="screenButton screenButton--primary" onClick={() => navigate(routes.root)}>
-          На главную
+        {user.role === null ? (
+          <p className="screen__note">Чтобы откликнуться, выберите роль «Ищу работу»</p>
+        ) : null}
+        <button type="button" className="screenButton screenButton--primary" onClick={() => navigate(action.to)}>
+          {action.label}
         </button>
       </div>
     </div>

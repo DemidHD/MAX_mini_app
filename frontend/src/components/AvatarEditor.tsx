@@ -1,24 +1,27 @@
 import { useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { Avatar, Button, Flex, Typography } from '@maxhub/max-ui'
 
 import { ApiError } from '@/api/client'
 import { avatarUrl, deleteAvatar, setAvatar } from '@/api/users'
 import type { User } from '@/api/types'
+import { CameraIcon } from '@/components/icons'
+import './AvatarEditor.css'
 
 interface AvatarEditorProps {
   user: User
   onChange: (user: User) => void
+  /** Ошибка загрузки/удаления — показывает родитель, у себя в раскладке. */
+  onError: (message: string | null) => void
 }
 
 /**
  * Установка/замена/удаление аватарки (раздел 27 тех-доки). Отдельного
  * `POST` для установки нет: `PATCH /users/me/avatar` и заводит, и заменяет.
+ * Круглое фото с кнопкой-камерой; «Удалить фото» — ссылкой под ним.
  */
-export function AvatarEditor({ user, onChange }: AvatarEditorProps) {
+export function AvatarEditor({ user, onChange, onError }: AvatarEditorProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -26,12 +29,11 @@ export function AvatarEditor({ user, onChange }: AvatarEditorProps) {
     if (!file) return
 
     setBusy(true)
-    setError(null)
+    onError(null)
     try {
-      const updated = await setAvatar(file)
-      onChange(updated)
+      onChange(await setAvatar(file))
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : 'Не удалось загрузить файл')
+      onError(cause instanceof ApiError ? cause.message : 'Не удалось загрузить фото')
     } finally {
       setBusy(false)
     }
@@ -39,55 +41,49 @@ export function AvatarEditor({ user, onChange }: AvatarEditorProps) {
 
   async function handleDelete() {
     setBusy(true)
-    setError(null)
+    onError(null)
     try {
       await deleteAvatar()
       onChange({ ...user, has_avatar: false, avatar_updated_at: null })
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : 'Не удалось удалить аватарку')
+      onError(cause instanceof ApiError ? cause.message : 'Не удалось удалить фото')
     } finally {
       setBusy(false)
     }
   }
 
-  const initials = user.first_name.slice(0, 1).toUpperCase()
-
   return (
-    <Flex direction="column" align="center" gap={12}>
-      <Avatar.Container size={88} form="circle">
+    <div className="avatarEditor">
+      <button
+        type="button"
+        className={`avatarEditor__photo${busy ? ' avatarEditor__photo--busy' : ''}`}
+        aria-label={user.has_avatar ? 'Заменить фото' : 'Загрузить фото'}
+        disabled={busy}
+        onClick={() => inputRef.current?.click()}
+      >
         {user.has_avatar ? (
-          <Avatar.Image src={avatarUrl(user.avatar_updated_at)} alt="Аватарка" />
+          <img src={avatarUrl(user.avatar_updated_at)} alt="" />
         ) : (
-          <Avatar.Text>{initials}</Avatar.Text>
+          <span className="avatarEditor__initials">{user.first_name.slice(0, 1).toUpperCase()}</span>
         )}
-      </Avatar.Container>
+        <span className="avatarEditor__camera" aria-hidden="true">
+          <CameraIcon size={18} strokeWidth={2} />
+        </span>
+      </button>
 
-      <Flex gap={8}>
-        <Button
-          size="small"
-          variant="secondary"
-          loading={busy}
-          disabled={busy}
-          onClick={() => inputRef.current?.click()}
-        >
-          {user.has_avatar ? 'Заменить' : 'Загрузить фото'}
-        </Button>
-        {user.has_avatar ? (
-          <Button size="small" variant="ghost" disabled={busy} onClick={() => void handleDelete()}>
-            Удалить
-          </Button>
-        ) : null}
-      </Flex>
+      {user.has_avatar ? (
+        <button type="button" className="avatarEditor__delete" disabled={busy} onClick={() => void handleDelete()}>
+          Удалить фото
+        </button>
+      ) : null}
 
       <input
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
-        style={{ display: 'none' }}
+        hidden
         onChange={(event) => void handleFileChange(event)}
       />
-
-      {error ? <Typography.Body>{error}</Typography.Body> : null}
-    </Flex>
+    </div>
   )
 }

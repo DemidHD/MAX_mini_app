@@ -1,0 +1,202 @@
+/* E13 «Расскажите, кто вам нужен» — голосовой ввод на синем фоне. */
+
+.voice {
+  padding-bottom: 0;
+  background: #0066fd;
+  color: #fff;
+}
+
+.voice .p1Top__title {
+  color: #fff;
+  font-size: 16px;
+}
+
+.voice .backButton--raised {
+  width: 40px;
+  height: 40px;
+  box-shadow: 0 6px 18px rgba(0, 30, 90, 0.18);
+}
+
+.voice__title {
+  margin-top: 22px;
+  color: #fff;
+}
+
+.voice__subtitle {
+  margin-top: 10px;
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.voice__stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 250px;
+  margin: 0 -20px;
+  padding: 18px 0 26px;
+  overflow: hidden;
+}
+
+.voice__status {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice__wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 170px;
+  margin-top: 14px;
+}
+
+.voice__bars {
+  display: flex;
+  align-items: center;
+  gap: 6.5px;
+}
+
+.voice__bar {
+  display: block;
+  width: 4px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.55);
+  transform: scaleY(0.55);
+  transition: transform 0.08s linear;
+}
+
+.voice__bar--dot {
+  width: 5px;
+  height: 5px !important;
+  transform: none !important;
+}
+
+/* Пока нет записи — волна «уснувшая», без анимации. */
+.voice__wave:not(.voice__wave--live) .voice__bar {
+  transition: transform 0.3s ease;
+}
+
+.voice__mic {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 94px;
+  height: 94px;
+  flex-shrink: 0;
+  margin: 0 3px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  color: #0066fd;
+  box-shadow:
+    0 0 0 17px rgba(255, 255, 255, 0.1),
+    0 0 40px 18px rgba(120, 180, 255, 0.35);
+  cursor: pointer;
+}
+
+.voice__wave--live .voice__mic {
+  animation: voice-pulse 1.6s ease-in-out infinite;
+}
+
+.voice__mic:disabled {
+  cursor: default;
+}
+
+@keyframes voice-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 17px rgba(255, 255, 255, 0.1),
+      0 0 40px 18px rgba(120, 180, 255, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 24px rgba(255, 255, 255, 0.12),
+      0 0 48px 22px rgba(120, 180, 255, 0.42);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice__wave--live .voice__mic {
+    animation: none;
+  }
+}
+
+.voice__sheet {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: 0 -20px;
+  padding: 12px 18px 24px;
+  border-radius: 34px 34px 0 0;
+  background: #fff;
+  color: var(--p1-ink);
+}
+
+.voice__handle {
+  align-self: center;
+  width: 42px;
+  height: 5px;
+  border-radius: 999px;
+  background: #dcdfe8;
+}
+
+.voice__chip {
+  margin-top: 22px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #ebf0fa;
+  color: #5a6178;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.voice__transcript {
+  display: -webkit-box;
+  margin: 14px 0 0;
+  overflow: hidden;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.voice__transcript--muted {
+  font-size: 20px;
+  font-weight: 700;
+  color: #9aa0b4;
+}
+
+.voice__hint {
+  margin: 12px 0 0;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--p1-muted);
+}
+
+.voice__error {
+  align-self: stretch;
+  margin: 14px 0 0;
+}
+
+.voice__button {
+  margin-top: 30px;
+}
+
+.voice__cancel {
+  margin-top: 8px;
+}

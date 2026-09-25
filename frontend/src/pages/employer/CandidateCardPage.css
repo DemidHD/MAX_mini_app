@@ -241,6 +241,12 @@
   opacity: 0.45;
 }
 
+.candidateCard__round--active .candidateCard__roundIcon,
+.candidateCard__round--active:disabled .candidateCard__roundIcon {
+  opacity: 1;
+  color: var(--screen-primary);
+}
+
 .candidateCard__roundIcon {
   display: flex;
   align-items: center;
