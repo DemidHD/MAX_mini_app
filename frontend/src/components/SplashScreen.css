@@ -11,6 +11,19 @@
   background-size: cover;
 }
 
+.splash__brand {
+  position: absolute;
+  top: 70px;
+  left: 26px;
+  margin: 0;
+  color: #fff;
+  font-family: 'Inter', -apple-system, system-ui, 'Helvetica Neue', Roboto, sans-serif;
+  font-size: 76px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
 .splash__status {
   display: flex;
   flex-direction: column;

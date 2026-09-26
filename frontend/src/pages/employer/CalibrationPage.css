@@ -1,0 +1,412 @@
+/*
+ * E17 «Калибровка предпочтений» (P2). Синий полноэкранный фон, стопка из
+ * трех карточек: главная повернута на −2.2°, боковые выглядывают из-за нее.
+ * Размеры сняты с макета 390×844.
+ */
+
+.calibration {
+  padding: 20px 19px 46px;
+  background: #0064fd;
+  color: #fff;
+}
+
+.calibration__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  height: 34px;
+}
+
+.calibration .backButton {
+  width: 34px;
+  height: 34px;
+  margin-left: 4px;
+  box-shadow: 0 6px 16px rgba(0, 30, 120, 0.18);
+}
+
+.calibration__progress {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-right: 9px;
+  padding-top: 7.5px;
+}
+
+.calibration__progressText {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 15px;
+  letter-spacing: -0.01em;
+}
+
+.calibration__track {
+  position: relative;
+  width: 62.6px;
+  height: 8.2px;
+  margin: 4.5px 4.1px 0;
+}
+
+.calibration__track::before,
+.calibration__trackFill {
+  content: '';
+  position: absolute;
+  top: 2.85px;
+  left: 0;
+  height: 2.5px;
+  border-radius: 2px;
+}
+
+.calibration__track::before {
+  right: 0;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.calibration__trackFill {
+  background: #fff;
+  transition: width 0.25s ease;
+}
+
+.calibration__dot {
+  position: absolute;
+  top: 0;
+  width: 8.2px;
+  height: 8.2px;
+  border-radius: 50%;
+  background: #3a93ff;
+  transform: translateX(-50%);
+  transition: background 0.2s ease;
+}
+
+.calibration__dot--done {
+  background: #fff;
+}
+
+.calibration__eyebrow {
+  display: block;
+  margin-top: 8.2px;
+  padding-left: 5.7px;
+  font-size: 14.6px;
+  font-weight: 500;
+  line-height: 18px;
+  letter-spacing: -0.01em;
+}
+
+.calibration__title {
+  margin-top: 3.9px;
+  padding-left: 5.7px;
+  font-size: 48px;
+  line-height: 44.4px;
+  letter-spacing: -0.04em;
+  color: #fff;
+}
+
+.calibration__subtitle {
+  margin: 8.4px 0 0;
+  padding-left: 5.2px;
+  font-size: 16px;
+  line-height: 17.4px;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* ------------------------------------------------------ стопка карточек */
+
+.calibration__stack {
+  position: relative;
+  margin: 18px -19px 0;
+  padding-bottom: 6px;
+}
+
+.calibration__main {
+  position: relative;
+  z-index: 2;
+  width: 259.7px;
+  margin: 0 auto;
+  transform: translateX(2.5px) rotate(-2.2deg);
+}
+
+.calibrationCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 11.4px 14.4px 14.2px 14.6px;
+  border-radius: 18px;
+  background: #fbfcfe;
+  box-shadow: 0 24px 50px rgba(0, 30, 120, 0.28);
+  color: var(--p1-ink);
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  transition: transform 0.22s ease, opacity 0.22s ease;
+  animation: calibrationCardIn 0.24s ease;
+}
+
+.calibrationCard--dragging {
+  transition: none;
+  cursor: grabbing;
+}
+
+@keyframes calibrationCardIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.calibrationCard__photo {
+  display: block;
+  width: 100%;
+  height: 154px;
+  border-radius: 16px;
+  background: #dfe4ec;
+  overflow: hidden;
+}
+
+.calibrationCard__photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  pointer-events: none;
+}
+
+.calibrationCard__chip {
+  margin: 9.6px 0 0 6.9px;
+  padding: 0 6.4px;
+  border-radius: 999px;
+  background: #eef2fb;
+  color: #5b6178;
+  font-size: 9px;
+  line-height: 16.9px;
+}
+
+.calibrationCard__name {
+  margin: 1.75px 0 0 7.3px;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 28px;
+  letter-spacing: -0.02em;
+}
+
+.calibrationCard__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: stretch;
+  margin: 13px 3.4px 0 2.3px;
+  padding: 0;
+  list-style: none;
+}
+
+.calibrationCard__row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 48.9px;
+  padding: 4.4px 10px 6px 40.2px;
+  border-radius: 12px;
+  background: #edf2fd;
+}
+
+.calibrationCard__rowIcon {
+  position: absolute;
+  top: 4.6px;
+  left: 10.8px;
+  display: flex;
+  color: var(--p1-ink);
+}
+
+.calibrationCard__rowLabel {
+  font-size: 10px;
+  line-height: 12px;
+  color: #7c8299;
+}
+
+.calibrationCard__rowValue {
+  margin-top: 3.1px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 19px;
+  letter-spacing: -0.01em;
+}
+
+/* 4–6 критериев: фото ниже и строки плотнее, чтобы кнопки остались на экране. */
+.calibrationCard--dense .calibrationCard__photo {
+  height: 104px;
+}
+
+.calibrationCard--dense .calibrationCard__rows {
+  gap: 4px;
+  margin-top: 9px;
+}
+
+.calibrationCard--dense .calibrationCard__row {
+  min-height: 0;
+  padding-top: 3.5px;
+  padding-bottom: 4px;
+}
+
+.calibrationCard--dense .calibrationCard__rowValue {
+  margin-top: 1px;
+  font-size: 14.5px;
+  line-height: 17px;
+}
+
+/* Боковые карточки — декор: следующий и предыдущий профиль «в глубине». */
+.calibrationSide {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 170px;
+  height: 268px;
+  padding: 9px 11px;
+  border-radius: 16px;
+  background: #f3f6fd;
+  box-shadow: 0 16px 36px rgba(0, 30, 120, 0.22);
+  opacity: 0.95;
+  filter: blur(0.4px);
+  pointer-events: none;
+}
+
+.calibrationSide--left {
+  top: 57px;
+  left: calc(50% - 173px);
+  transform: rotate(-7deg);
+}
+
+.calibrationSide--right {
+  top: 48px;
+  left: calc(50% + 6.7px);
+  transform: rotate(5deg);
+}
+
+.calibrationSide__photo {
+  position: relative;
+  display: block;
+  height: 130px;
+  flex-shrink: 0;
+  border-radius: 13px;
+  background: linear-gradient(160deg, #dfe4ec 0%, #c9d0dc 100%);
+  overflow: hidden;
+}
+
+.calibrationSide__photo img {
+  position: absolute;
+  top: 0;
+  width: 56px;
+  height: 100%;
+  object-fit: cover;
+}
+
+.calibrationSide--left .calibrationSide__photo img {
+  left: 0;
+}
+
+.calibrationSide--right .calibrationSide__photo img {
+  right: 0;
+}
+
+.calibrationSide__row {
+  display: block;
+  height: 38px;
+  border-radius: 10px;
+  background: #e6edf9;
+}
+
+/* ------------------------------------------------------------ действия */
+
+.calibration__spacer {
+  flex: 1;
+  min-height: 24px;
+}
+
+.calibration__error {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.calibration__actions {
+  display: flex;
+  gap: 9.2px;
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+.calibration__no,
+.calibration__yes {
+  flex: 1;
+  min-width: 0;
+  height: 46.6px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+
+.calibration__no:active:not(:disabled),
+.calibration__yes:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.calibration__no:disabled,
+.calibration__yes:disabled {
+  opacity: 0.75;
+  cursor: default;
+}
+
+.calibration__no {
+  background: #fff;
+  color: var(--p1-ink);
+  box-shadow: 0 10px 24px rgba(0, 30, 120, 0.18);
+}
+
+.calibration__no--wide {
+  flex: none;
+  width: 100%;
+}
+
+.calibration__yes {
+  background: #0271ff;
+  color: #fff;
+  box-shadow: inset 0 0 0 1.5px rgba(120, 180, 255, 0.6);
+}
+
+.calibration__skip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 40px;
+  margin-top: 6.5px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.calibration__skip:disabled {
+  opacity: 0.5;
+}
+
+@media (max-width: 359px) {
+  .calibration__stack {
+    transform: scale(0.9);
+    transform-origin: top center;
+    margin-bottom: -40px;
+  }
+}

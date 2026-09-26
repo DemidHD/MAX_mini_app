@@ -388,6 +388,102 @@ export function MaxChatIcon({ size = 24 }: IconProps) {
   )
 }
 
+export function ChartIcon({ size = 20, strokeWidth = 1.9 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M5 20V12M10 20V6M15 20v-9M20 20V4" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  )
+}
+
+export function ChevronDownIcon({ size = 20, strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  )
+}
+
+/** Маркированный список (навыки и прочие перечисления, C11). */
+export function ListIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M9 6.5h11M9 12h11M9 17.5h11" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
+      <circle cx="4.5" cy="6.5" r="1.2" fill="currentColor" />
+      <circle cx="4.5" cy="12" r="1.2" fill="currentColor" />
+      <circle cx="4.5" cy="17.5" r="1.2" fill="currentColor" />
+    </Svg>
+  )
+}
+
+/** Документ с галочкой — «резюме проверено» (C11). */
+export function DocCheckIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M11 20.5H6.5A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1.5-1.5h7l4 4V12" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M13.5 3.5V7.5h4M8.5 9.5h4M8.5 13h6" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m14 17.5 2 2 4-4.5" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  )
+}
+
+export function PeopleIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <circle cx="9" cy="8" r="3.5" stroke="currentColor" strokeWidth={strokeWidth} />
+      <path d="M2.5 19.5c.6-3.3 3.2-5.5 6.5-5.5s5.9 2.2 6.5 5.5" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
+      <path d="M15.5 4.8a3.5 3.5 0 0 1 0 6.4M18 14.4c1.9.8 3.1 2.6 3.5 5.1" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  )
+}
+
+export function CopyIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <rect x="8.5" y="8.5" width="11" height="12" rx="2.5" stroke="currentColor" strokeWidth={strokeWidth} />
+      <path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H7A2.5 2.5 0 0 0 4.5 6v8A2.5 2.5 0 0 0 7 16.5h1.5" stroke="currentColor" strokeWidth={strokeWidth} />
+    </Svg>
+  )
+}
+
+/** Системное «поделиться»: стрелка вверх из коробки. */
+export function ShareIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M12 14.5V3.5m0 0L8 7.5m4-4 4 4" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.5 10.5H7A2.5 2.5 0 0 0 4.5 13v5A2.5 2.5 0 0 0 7 20.5h10a2.5 2.5 0 0 0 2.5-2.5v-5a2.5 2.5 0 0 0-2.5-2.5h-1.5" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  )
+}
+
+export function HeartIcon({ size = 20, strokeWidth = 1.9 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M12 19.5s-7.5-4.4-7.5-9.7A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6c0 5.3-7.5 9.7-7.5 9.7Z" stroke="currentColor" strokeWidth={strokeWidth} strokeLinejoin="round" />
+    </Svg>
+  )
+}
+
+export function PinFilledIcon({ size = 20 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path
+        d="M12 2.5a7.5 7.5 0 0 0-7.5 7.5c0 5.6 6.4 11.1 6.7 11.3a1.2 1.2 0 0 0 1.6 0c.3-.2 6.7-5.7 6.7-11.3A7.5 7.5 0 0 0 12 2.5Zm0 4.6a2.9 2.9 0 1 1 0 5.8 2.9 2.9 0 0 1 0-5.8Z"
+        fill="currentColor"
+        fillRule="evenodd"
+      />
+    </Svg>
+  )
+}
+
+export function BoltFilledIcon({ size = 20 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M13.9 2.2a.6.6 0 0 1 1 .6L13.3 10h5.2a.6.6 0 0 1 .5 1L10.1 21.8a.6.6 0 0 1-1-.6l1.6-7.2H5.5a.6.6 0 0 1-.5-1l8.9-10.8Z" fill="currentColor" />
+    </Svg>
+  )
+}
+
 /** Две черточки-«искры» из макетов. */
 export function AccentMarks({ className = '' }: { className?: string }) {
   return (

@@ -25,7 +25,7 @@ export function ErrorScreen({
   return (
     <div className="screen errorScreen">
       <p className="screen__logo">
-        <span>MAX</span> Найм
+        <span>МЭТЧ</span>
       </p>
       <h1 className="screen__title errorScreen__title">{title}</h1>
       <p className="screen__subtitle errorScreen__subtitle">{text}</p>

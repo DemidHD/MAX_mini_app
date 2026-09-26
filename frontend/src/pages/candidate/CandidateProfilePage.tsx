@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
 import { ApiError } from '@/api/client'
@@ -22,6 +22,7 @@ import { useAsync } from '@/hooks/useAsync'
 import { dayKey, formatExperience, formatReadyShort, formatSalaryRange } from '@/lib/format'
 import { getCandidateProfile, updateCandidateProfile } from '@/api/hiring'
 import type { CandidateProfile } from '@/api/hiring'
+import type { ResumeParsedDraft } from '@/api/p2'
 import { ProfileFieldSheet } from '@/pages/candidate/ProfileFieldSheet'
 import type { ProfileField } from '@/pages/candidate/ProfileFieldSheet'
 import artCalendar from '@/assets/art-calendar.webp'
@@ -33,18 +34,37 @@ import './CandidateProfilePage.css'
 /**
  * C01 «Профиль кандидата»: минимум данных для подбора вакансий (раздел 14
  * тех-доки; `GET/PATCH /candidate/profile`). Каждая карточка открывает
- * редактирование поля; «Загрузить резюме» — функция P2 (C11), поэтому в P0
- * видна, но неактивна.
+ * редактирование поля; «Загрузить резюме» ведёт в импорт резюме C11 (P2).
+ * Подтверждённый там черновик приходит в `location.state.resumeDraft` и
+ * только подставляется в форму — сохраняет его кандидат кнопкой «Сохранить».
  */
 export function CandidateProfilePage() {
   const navigate = useNavigate()
+  const resumeDraft = (useLocation().state as { resumeDraft?: ResumeParsedDraft } | null)?.resumeDraft ?? null
   const { state, reload } = useAsync((signal) => getCandidateProfile(signal), [])
 
   if (state.status === 'loading') return <LoadingScreen />
   if (state.status === 'error') {
     return <ErrorScreen error={state.error} onRetry={reload} onBack={() => navigate(-1)} />
   }
-  return <ProfileForm initial={state.data ?? EMPTY_PROFILE} />
+  return <ProfileForm initial={applyResumeDraft(state.data ?? EMPTY_PROFILE, resumeDraft)} />
+}
+
+/** Поля, найденные в резюме, перекрывают текущие значения формы; пустые — нет. */
+function applyResumeDraft(profile: CandidateProfile, draft: ResumeParsedDraft | null): CandidateProfile {
+  if (!draft) return profile
+  const text = (value: string | null) => (value && value.trim() ? value.trim() : null)
+  const months = draft.experience_months
+  const date = draft.available_from && /^\d{4}-\d{2}-\d{2}$/.test(draft.available_from) ? draft.available_from : null
+  return {
+    ...profile,
+    desired_role: text(draft.desired_role) ?? profile.desired_role,
+    city: text(draft.city) ?? profile.city,
+    salary: draft.salary !== null && Number(draft.salary) > 0 ? String(draft.salary) : profile.salary,
+    schedule: text(draft.schedule) ?? profile.schedule,
+    experience_months: months !== null && Number.isInteger(months) && months >= 0 ? months : profile.experience_months,
+    available_from: date ?? profile.available_from,
+  }
 }
 
 /** Нового кандидата профиль ещё не создан — `GET` отвечает 404. */
@@ -103,7 +123,7 @@ function ProfileForm({ initial }: { initial: CandidateProfile }) {
   return (
     <div className="screen profileSetup">
       <p className="screen__logo">
-        <span>MAX</span> Найм
+        <span>МЭТЧ</span>
       </p>
 
       <div className="profileSetup__heading">
@@ -209,7 +229,7 @@ function ProfileForm({ initial }: { initial: CandidateProfile }) {
         />
       </div>
 
-      <button type="button" className="profileSetup__resume" disabled title="Импорт резюме появится в следующей версии">
+      <button type="button" className="profileSetup__resume" onClick={() => navigate(routes.candidateResumeImport)}>
         <span className="profileSetup__resumeIcon">
           <DocumentIcon size={24} />
         </span>

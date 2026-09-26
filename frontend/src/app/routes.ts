@@ -12,11 +12,15 @@ export const routes = {
   profile: '/profile',
   authError: '/error',
   candidateProfileSetup: '/candidate/profile-setup',
+  // P2: импорт резюме (C11) — черновик полей, подтверждение ведёт в C01.
+  candidateResumeImport: '/candidate/profile-setup/resume',
   candidateFeed: '/candidate/feed',
   candidateApplications: '/candidate/applications',
   candidateVacancy: (vacancyId: Id = ':vacancyId') => `/candidate/vacancies/${vacancyId}`,
   /** Публичная ссылка на вакансию `{APP_URL}/v/{token}` (раздел 15 тех-доки). */
   vacancyPublic: (token: Id = ':token') => `/v/${token}`,
+  /** Реферальная ссылка R01 (P2) — «Общее»: доступна кандидату и работодателю. */
+  vacancyReferral: (vacancyId: Id = ':vacancyId') => `/vacancies/${vacancyId}/referral`,
   candidateApplication: (applicationId: Id = ':applicationId') => `/candidate/applications/${applicationId}`,
   candidateScreeningStart: (applicationId: Id = ':applicationId') =>
     `/candidate/applications/${applicationId}/start`,
@@ -52,6 +56,10 @@ export const routes = {
     `/employer/candidates/${vacancyId}/${applicationId}/invite`,
   employerApplicationReject: (vacancyId: Id = ':vacancyId', applicationId: Id = ':applicationId') =>
     `/employer/candidates/${vacancyId}/${applicationId}/reject`,
+  // P2: калибровка (E17) и аналитика (E18);
+  // вакансия аналитики выбирается параметром `?vacancy=`, как на доске найма.
+  employerVacancyCalibration: (vacancyId: Id = ':vacancyId') => `/employer/vacancies/${vacancyId}/calibration`,
+  employerAnalytics: '/employer/analytics',
   employerInterview: (vacancyId: Id = ':vacancyId', interviewId: Id = ':interviewId') =>
     `/employer/vacancies/${vacancyId}/interviews/${interviewId}`,
 } as const

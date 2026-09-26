@@ -51,8 +51,7 @@ export function RoleSelectionPage() {
   return (
     <div className="roleScreen">
       <div className="roleScreen__brand">
-        <span className="roleScreen__brandMax">MAX</span>
-        <span className="roleScreen__brandName">Найм</span>
+        <span className="roleScreen__brandName">МЭТЧ</span>
       </div>
 
       <div className="roleScreen__heading">

@@ -21,6 +21,7 @@
 
 .vacancyDetails__more {
   display: flex;
+  color: #fff;
   align-items: center;
   justify-content: center;
   width: 44px;

@@ -1,4 +1,5 @@
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
 import { getPublicVacancy } from '@/api/vacancies'
@@ -10,6 +11,7 @@ import { criterionIcon, criterionLabel, splitCriteria, vacancyFacts } from '@/co
 import { useAsync } from '@/hooks/useAsync'
 import { useAuth } from '@/auth/useAuth'
 import { formatSalaryRange } from '@/lib/format'
+import { rememberReferral } from '@/lib/referral'
 import '@/pages/candidate/VacancyDetailsPage.css'
 
 /**
@@ -23,12 +25,21 @@ import '@/pages/candidate/VacancyDetailsPage.css'
  * - работодатель видит карточку, а свою вакансию может открыть в кандидатах;
  * - без роли (`role = NULL`) карточка ведёт на выбор роли — роль назначает
  *   только пользователь (раздел 9).
+ *
+ * `?ref=` — код реферальной ссылки (R01): запоминается по id вакансии и
+ * уходит в `POST /vacancies/{id}/apply?ref=` при отклике.
  */
 export function VacancyPublicPage() {
   const token = useParams().token ?? ''
   const navigate = useNavigate()
   const { state: authState } = useAuth()
+  const ref = useSearchParams()[0].get('ref')
   const { state, reload } = useAsync((signal) => getPublicVacancy(token, signal), [token])
+  const vacancyId = state.status === 'success' ? state.data.id : null
+
+  useEffect(() => {
+    if (vacancyId !== null && ref) rememberReferral(vacancyId, ref)
+  }, [vacancyId, ref])
 
   if (authState.status !== 'authenticated' || state.status === 'loading') return <LoadingScreen />
   if (state.status === 'error') {

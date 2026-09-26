@@ -35,7 +35,7 @@ export function MatchPage() {
   return (
     <div className="screen matchPage">
       <div className="matchPage__top">
-        <p className="matchPage__brand">MAX Найм</p>
+        <p className="matchPage__brand">МЭТЧ</p>
         <h1 className="screen__title matchPage__title">
           Есть взаимный
           <br />
