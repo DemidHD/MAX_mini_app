@@ -195,3 +195,24 @@ async def parse_resume(user: User) -> ParseResumeResponse:
             parsed=ResumeParsedDraft(), provider=None, ai_available=False
         )
     return await ai_service.parse_resume(profile.resume_text)
+
+
+async def parse_resume_draft(content: bytes) -> ParseResumeResponse:
+    """Черновик полей профиля из присланного файла резюме — для кандидата,
+    который ещё не создавал профиль (C11 до первого `PATCH /candidate/profile`,
+    `candidate_profiles` пока не существует, а `desired_role` там NOT NULL).
+
+    В отличие от `parse_resume`, ничего никуда не сохраняет: ни файл, ни
+    извлечённый текст не привязываются к профилю. Подтверждение — тот же
+    `PATCH /candidate/profile`, что и у остальных источников черновика; если
+    кандидат позже захочет сохранить сам файл резюме, это отдельный
+    `PATCH /candidate/resume`, который уже требует существующий профиль.
+    """
+    ensure_resume_size(len(content))
+    mime = detect_resume_mime(content)
+    text = extract_resume_text(content, mime)
+    if not text:
+        return ParseResumeResponse(
+            parsed=ResumeParsedDraft(), provider=None, ai_available=False
+        )
+    return await ai_service.parse_resume(text)

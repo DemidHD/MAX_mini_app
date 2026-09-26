@@ -56,3 +56,15 @@ async def delete_resume(user: CandidateUser) -> None:
 async def parse_resume(user: CandidateUser) -> ParseResumeResponse:
     """Черновик полей профиля из текста резюме — ничего не сохраняет."""
     return await service.parse_resume(user)
+
+
+@router.post("/resume/draft", response_model=ParseResumeResponse)
+async def parse_resume_draft(
+    _: CandidateUser, file: UploadFile = File(...)
+) -> ParseResumeResponse:
+    """Черновик полей профиля прямо из файла резюме, без сохранённого профиля
+    и без сохранения файла (см. `service.parse_resume_draft`)."""
+    if file.size is not None:
+        ensure_resume_size(file.size)
+    content = await file.read(settings.resume_max_size_bytes + 1)
+    return await service.parse_resume_draft(content)
