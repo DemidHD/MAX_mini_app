@@ -1,0 +1,21 @@
+# Контекст сборки образа nginx (docker-compose.yml, `context: .`).
+# Backend собирается из ./backend со своим .dockerignore.
+
+.git
+.claude
+backend
+docs
+storage
+certs
+nginx/certs
+
+# Секреты и локальные настройки: образ не должен зависеть от машины, на
+# которой собирается (frontend/.env.local — dev-настройки разработчика).
+.env
+**/.env
+**/.env.*
+!**/.env.example
+
+# Ставится и собирается внутри образа.
+frontend/node_modules
+frontend/dist
