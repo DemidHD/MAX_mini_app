@@ -167,6 +167,13 @@ class Settings(BaseSettings):
     yandex_speechkit_api_key: str = ""
     yandex_speechkit_lang: str = "ru-RU"
 
+    @field_validator("max_bot_token", "max_webhook_secret", "max_bot_username", mode="before")
+    @classmethod
+    def _strip_secret(cls, value: object) -> object:
+        # Значения вставляют в панели хостинга руками: пробел или перенос
+        # строки по краям молча ломает проверку подписи initData.
+        return value.strip() if isinstance(value, str) else value
+
     @field_validator("avatar_allowed_mime_types", "ai_provider_order", mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:

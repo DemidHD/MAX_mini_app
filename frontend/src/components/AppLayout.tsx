@@ -1,6 +1,7 @@
 import { Panel } from '@maxhub/max-ui'
 import { Outlet, ScrollRestoration } from 'react-router-dom'
 
+import { ApiError } from '@/api/client'
 import { useAuth } from '@/auth/useAuth'
 import { MaxBridgeUnavailableError } from '@/bridge/maxBridge'
 import { ErrorScreen } from '@/components/ErrorScreen'
@@ -46,9 +47,16 @@ export function AppLayout() {
 /**
  * Текст G03 без технического жаргона. Mini App, открытый вне MAX, — частый
  * случай для обычной https-ссылки; подсказку для разработчика показываем
- * только в dev-сборке.
+ * только в dev-сборке. `invalid_init_data` — backend не подтвердил подпись
+ * MAX (раздел 6): это не истёкшая сессия, общий текст для 401 тут вводит
+ * в заблуждение.
  */
 function authErrorText(error: Error): string | undefined {
-  if (!(error instanceof MaxBridgeUnavailableError)) return undefined
-  return import.meta.env.DEV ? error.message : 'Откройте МЭТЧ в приложении MAX и попробуйте еще раз'
+  if (error instanceof MaxBridgeUnavailableError) {
+    return import.meta.env.DEV ? error.message : 'Откройте МЭТЧ в приложении MAX и попробуйте еще раз'
+  }
+  if (error instanceof ApiError && error.code === 'invalid_init_data') {
+    return 'Не удалось подтвердить вход через MAX. Закройте приложение и откройте его снова через бота'
+  }
+  return undefined
 }

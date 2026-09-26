@@ -4,10 +4,11 @@ import asyncio
 import logging
 import time
 from datetime import timedelta
+from hashlib import sha256
 from uuid import UUID
 
 from app.applications.models import Application
-from app.auth.init_data import InitData, MaxUser, validate_init_data
+from app.auth.init_data import InitData, InitDataError, MaxUser, validate_init_data
 from app.auth.models import Session
 from app.candidates.models import CandidateProfile
 from app.core import cache
@@ -48,11 +49,15 @@ ACTIVE_APPLICATION_STATUSES = (
 
 async def authenticate(init_data_raw: str) -> tuple[User, Session]:
     """Проверяет initData, создаёт или обновляет пользователя и открывает сессию."""
-    init_data: InitData = validate_init_data(
-        init_data_raw,
-        bot_token=settings.max_bot_token,
-        max_age_seconds=settings.auth_date_max_age_seconds,
-    )
+    try:
+        init_data: InitData = validate_init_data(
+            init_data_raw,
+            bot_token=settings.max_bot_token,
+            max_age_seconds=settings.auth_date_max_age_seconds,
+        )
+    except InitDataError as exc:
+        _log_rejected_init_data(init_data_raw, exc)
+        raise
     await _cleanup_expired_sessions_if_due()
     user = await _upsert_user(init_data.user)
     session = await Session.create(
@@ -60,6 +65,30 @@ async def authenticate(init_data_raw: str) -> tuple[User, Session]:
         expires_at=utcnow() + timedelta(hours=settings.session_ttl_hours),
     )
     return user, session
+
+
+def _log_rejected_init_data(init_data_raw: str, exc: InitDataError) -> None:
+    """Причина отказа для диагностики по логам хостинга.
+
+    Раздел 77 тех-доки запрещает логировать токен бота и полную initData,
+    поэтому пишутся только имена полей (без значений) и отпечаток токена —
+    первые символы его SHA-256: по нему можно сверить, тот ли токен
+    загрузился в контейнер, не раскрывая сам токен.
+    """
+    keys = sorted(
+        {chunk.partition("=")[0] for chunk in init_data_raw.split("&") if chunk}
+    )
+    token = settings.max_bot_token
+    fingerprint = sha256(token.encode("utf-8")).hexdigest()[:8] if token else "-"
+    logger.warning(
+        "initData отклонена: %s; поля: %s; длина initData: %d; "
+        "токен бота: длина %d, sha256 %s",
+        exc.message,
+        ",".join(keys) or "-",
+        len(init_data_raw),
+        len(token),
+        fingerprint,
+    )
 
 
 async def cleanup_expired_sessions(*, force: bool = False) -> int:
