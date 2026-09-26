@@ -10,6 +10,7 @@ from app.applications.models import Application
 from app.auth.init_data import InitData, MaxUser, validate_init_data
 from app.auth.models import Session
 from app.candidates.models import CandidateProfile
+from app.core import cache
 from app.core.config import settings
 from app.core.database import utcnow
 from app.core.enums import ApplicationStatus, UserRole
@@ -17,6 +18,17 @@ from app.users.models import User
 from app.vacancies.models import Vacancy
 
 logger = logging.getLogger("app.auth")
+
+# Раздел 10: сессия проверяется на каждый запрос — это самый частый путь в
+# приложении. Кэшируется только неизменная часть — `session_id -> user_id`
+# (какая роль, имя и т.д. у пользователя, кэш не хранит вовсе): эта связка не
+# меняется, пока сессия жива, и специально не требует инвалидации при смене
+# роли/профиля/аватарки. `User` на кэш-попадании всё равно читается заново из
+# БД — иначе объект пришлось бы собирать вручную мимо ORM, а весь остальной
+# код (например `users.service.update_profile`) вызывает `user.save(...)`
+# прямо на переданном объекте и должен получать настоящий, а не восстановленный
+# из JSON экземпляр.
+_SESSION_CACHE_PREFIX = "cache:session:"
 
 _session_cleanup_lock = asyncio.Lock()
 _last_session_cleanup: float | None = None
@@ -111,11 +123,31 @@ async def _upsert_user(max_user: MaxUser) -> User:
 
 
 async def get_session_user(raw_session_id: str) -> User | None:
-    """Возвращает пользователя действующей сессии; просроченную сессию удаляет."""
+    """Возвращает пользователя действующей сессии; просроченную сессию удаляет.
+
+    На кэш-попадании пропускает обращение к `sessions` целиком — саму
+    таблицу сессий и, главное, запись `last_used_at` при каждом запросе:
+    это поле нигде не используется бизнес-логикой (`cleanup_expired_sessions`
+    чистит по `expires_at`), только для диагностики, поэтому отставание на
+    TTL кэша ничем не рискует. Есть и обратная сторона: если сессия истекает
+    прямо внутри окна TTL, кэш может ещё TTL секунд считать её действующей —
+    цена этого при `SESSION_TTL_HOURS` в днях/неделях против частоты запроса
+    на каждый эндпоинт признана приемлемой.
+    """
     try:
         session_id = UUID(raw_session_id)
     except ValueError:
         return None
+
+    cache_key = f"{_SESSION_CACHE_PREFIX}{session_id}"
+    cached = await cache.get_json(cache_key)
+    if cached is not None:
+        user = await User.get_or_none(user_id=cached["user_id"])
+        if user is not None:
+            return user
+        # Не должно происходить (пользователи не удаляются), но кэш на
+        # исчезнувшего пользователя лучше забыть и пойти обычным путём.
+        await cache.delete(cache_key)
 
     session = await Session.get_or_none(id=session_id).select_related("user")
     if session is None:
@@ -127,6 +159,9 @@ async def get_session_user(raw_session_id: str) -> User | None:
 
     session.last_used_at = utcnow()
     await session.save(update_fields=["last_used_at"])
+    await cache.set_json(
+        cache_key, {"user_id": session.user_id}, settings.cache_session_ttl_seconds
+    )
     return session.user
 
 

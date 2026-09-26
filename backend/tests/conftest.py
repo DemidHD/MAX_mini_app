@@ -36,6 +36,7 @@ os.environ.setdefault("MAX_WEBHOOK_SECRET", "test-webhook-secret")
 
 from app.applications import router as applications_router
 from app.auth import router as auth_router
+from app.core import cache
 from app.core.config import settings
 from app.core.database import TORTOISE_ORM
 from app.interviews import router as interviews_router
@@ -45,6 +46,13 @@ from tests.factories import TEST_BOT_TOKEN
 
 _DEV_DSN: str = settings.test_database_url or TORTOISE_ORM["connections"]["default"]
 _TEST_DB_NAME = f"{urlparse(_DEV_DSN).path.lstrip('/')}_test"
+
+# Своя БД Redis для тестов — так же, как с БД выше: DSN по умолчанию указывает
+# на хост `redis` из сети Docker Compose, с машины разработчика (pytest) это
+# имя не резолвится. Пусто — тесты просто работают без кэша (см. `app.core.cache`
+# про то, что недоступный Redis — это промах, а не ошибка).
+_DEV_REDIS_URL = settings.redis_url
+settings.redis_url = settings.test_redis_url or settings.redis_url
 
 
 def _test_dsn() -> str:
@@ -103,9 +111,34 @@ async def _database(tmp_path_factory: pytest.TempPathFactory) -> AsyncIterator[N
             lifespan_task.exception()
         TORTOISE_ORM["connections"]["default"] = _DEV_DSN
         settings.storage_root = original_storage_root
+        settings.redis_url = _DEV_REDIS_URL
         await _run_on_dev_database(
             f'DROP DATABASE IF EXISTS "{_TEST_DB_NAME}" WITH (FORCE)'
         )
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _flush_cache() -> AsyncIterator[None]:
+    """Кэш выключен по умолчанию для всего набора тестов, кроме
+    `tests/test_cache.py` (там свой autouse-фикстур включает его обратно,
+    он выполняется позже и переопределяет это значение для своего модуля).
+
+    Причина не в производительности, а в корректности: подавляющее
+    большинство тестов меняет `Vacancy`/`User` напрямую через ORM в фикстурах
+    (`Vacancy.create(...)`, `Vacancy.all().delete()`), в обход
+    `app.vacancies.service`/`app.auth.service` — а значит и мимо инвалидации.
+    С включённым кэшем такие тесты читали бы состояние до правки. Поведение
+    самого кэша (наполнение, инвалидация, устойчивость к недоступному Redis)
+    проверяется отдельно, с явно включённым кэшем.
+
+    Очистка тестовой БД Redis перед каждым тестом — на случай, если она всё
+    же понадобится (см. `test_cache.py`): иначе значение, оставленное одним
+    тестом, попало бы в другой.
+    """
+    await cache.flush_all()
+    cache.set_enabled(False)
+    yield
+    cache.set_enabled(True)
 
 
 @pytest_asyncio.fixture(autouse=True)

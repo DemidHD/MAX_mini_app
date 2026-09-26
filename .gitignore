@@ -2,6 +2,11 @@
 .env
 .env.local
 
+# TLS-сертификат nginx (настоящий или самоподписанный, сгенерированный
+# контейнером при старте) — см. nginx/README.md
+nginx/certs/*
+!nginx/certs/.gitkeep
+
 # Local file storage (persistent volume in Docker)
 storage/
 

@@ -23,10 +23,12 @@ from tortoise.transactions import in_transaction
 from app.analytics import service as analytics
 from app.applications.models import Application, EmployerDecision, Match
 from app.applications.screening import public_rules
+from app.core import cache
 from app.core.config import settings
 from app.core.enums import ApplicationStatus, DecisionAction, UserRole, VacancyStatus
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.interviews.models import Interview
+from app.matching.service import invalidate_feed_pool
 from app.users.models import User
 from app.vacancies import images
 from app.vacancies import calibration
@@ -63,6 +65,36 @@ REFERRAL_CODE_ATTEMPTS = 3
 
 # Раздел 29: без этих данных вакансия не публикуется
 PUBLICATION_REQUIRED_FIELDS = ("title", "location", "salary", "schedule")
+
+# Не из тех-доки — техническая оптимизация (см. `app.core.cache`).
+# Кандидатский вид одной вакансии: одну и ту же карточку за TTL открывают
+# многие кандидаты (лента, прямая и реферальная ссылки), а меняет её только
+# работодатель.
+_VACANCY_VIEW_CACHE_PREFIX = "cache:vacancy_view:"
+# Список вакансий кабинета работодателя: открывается на каждый заход на
+# главную (E01), а меняется только его собственными действиями.
+_EMPLOYER_VACANCIES_CACHE_PREFIX = "cache:employer_vacancies:"
+
+
+def _vacancy_view_cache_key(vacancy_id: int) -> str:
+    return f"{_VACANCY_VIEW_CACHE_PREFIX}{vacancy_id}"
+
+
+def _employer_vacancies_cache_prefix(employer_id: int) -> str:
+    return f"{_EMPLOYER_VACANCIES_CACHE_PREFIX}{employer_id}:"
+
+
+async def _invalidate_vacancy_caches(vacancy: Vacancy) -> None:
+    """Единая точка инвалидации после любого изменения вакансии — кандидатская
+    карточка, кабинет работодателя и пул подбора ленты (`app.matching.service`)
+    читаются заметно чаще, чем вакансия меняется. Инвалидация всегда полная
+    и безусловная: отдельно разбирать, какое именно поле изменилось и повлияло
+    ли оно на кэш, не стоит своей сложности при таком соотношении чтений
+    к записям."""
+    await cache.delete(_vacancy_view_cache_key(vacancy.id))
+    await cache.delete_prefix(_employer_vacancies_cache_prefix(vacancy.employer_id))
+    await invalidate_feed_pool()
+
 
 ALLOWED_VACANCY_TRANSITIONS: dict[VacancyStatus, frozenset[VacancyStatus]] = {
     # Закрыть можно и черновик: работодатель мог передумать
@@ -148,6 +180,7 @@ async def create_vacancy(
             payload={"vacancy_id": vacancy.id},
         )
     logger.info("Создана вакансия %s со статусом %s", vacancy.id, vacancy.status.value)
+    await _invalidate_vacancy_caches(vacancy)
     return await _read(vacancy, owner=True)
 
 
@@ -167,13 +200,35 @@ async def get_vacancy(
             background_tasks=background_tasks,
         )
     if user.role is UserRole.CANDIDATE:
-        return await _read(
-            await _visible_vacancy(user, vacancy_id),
-            owner=False,
-            background_tasks=background_tasks,
+        return await _cached_candidate_view(
+            await _visible_vacancy(user, vacancy_id), background_tasks
         )
     # До выбора роли доступны только onboarding-эндпоинты (раздел 12)
     raise ForbiddenError("Сначала нужно выбрать роль", code="role_not_selected")
+
+
+async def _cached_candidate_view(
+    vacancy: Vacancy, background_tasks: BackgroundTasks
+) -> VacancyRead:
+    """Кандидатский вид вакансии (без владельческих полей), кэшированный по
+    `vacancy_id`. Доступ уже проверен вызывающим кодом (`_visible_vacancy` или
+    аналог в `get_vacancy_by_public_token`) — кэш только собирает готовый
+    ответ, никогда не решает, можно ли эту вакансию показывать.
+
+    На кэш-попадании фоновый подбор фото (`images.ensure_fresh_image` внутри
+    `_read`) не планируется: следующий промах (после TTL) попробует снова,
+    пока фото не назначится, поэтому подбор не теряется — только откладывается.
+    """
+    cache_key = _vacancy_view_cache_key(vacancy.id)
+    cached = await cache.get_json(cache_key)
+    if cached is not None:
+        return VacancyRead.model_validate(cached)
+
+    read = await _read(vacancy, owner=False, background_tasks=background_tasks)
+    await cache.set_json(
+        cache_key, read.model_dump(mode="json"), settings.cache_vacancy_view_ttl_seconds
+    )
+    return read
 
 
 async def _visible_vacancy(user: User, vacancy_id: int) -> Vacancy:
@@ -215,7 +270,7 @@ async def get_vacancy_by_public_token(
         ).exists()
         if not applied:
             raise NotFoundError("Вакансия не найдена", code="vacancy_not_found")
-    return await _read(vacancy, owner=False, background_tasks=background_tasks)
+    return await _cached_candidate_view(vacancy, background_tasks)
 
 
 async def delete_vacancy(user: User, vacancy_id: int) -> None:
@@ -234,6 +289,7 @@ async def delete_vacancy(user: User, vacancy_id: int) -> None:
             details={"status": vacancy.status.value},
         )
     await vacancy.delete()
+    await _invalidate_vacancy_caches(vacancy)
     logger.info("Черновик вакансии %s удалён работодателем %s", vacancy_id, user.user_id)
 
 
@@ -247,7 +303,7 @@ async def read_vacancy_for_candidate(
     `app.applications.service.get_application`), а не по обычному пути
     `GET /vacancies/{id}`.
     """
-    return await _read(vacancy, owner=False, background_tasks=background_tasks)
+    return await _cached_candidate_view(vacancy, background_tasks)
 
 
 async def list_own_vacancies(
@@ -256,20 +312,33 @@ async def list_own_vacancies(
     """Вакансии работодателя для его кабинета.
 
     Эндпоинта нет в разделе 27, но `current_step = employer_home` (раздел 7)
-    без списка вакансий не на чем показать.
+    без списка вакансий не на чем показать. Открывается на каждый заход на
+    главную (E01), а меняется только собственными действиями работодателя —
+    кэшируется постранично на короткий TTL (см. `app.core.cache`).
     """
+    cache_key = f"{_employer_vacancies_cache_prefix(user.user_id)}{limit}:{offset}"
+    cached = await cache.get_json(cache_key)
+    if cached is not None:
+        return VacancyListResponse.model_validate(cached)
+
     query = Vacancy.filter(employer_id=user.user_id)
     total = await query.count()
     # `-id` вторым ключом: у вакансий, созданных в одну миллисекунду, порядок
     # иначе не определён, и страницы могли бы перекрываться
     vacancies = await query.order_by("-created_at", "-id").offset(offset).limit(limit)
 
-    return VacancyListResponse(
+    response = VacancyListResponse(
         items=await _read_many(vacancies, owner=True),
         limit=limit,
         offset=offset,
         total=total,
     )
+    await cache.set_json(
+        cache_key,
+        response.model_dump(mode="json"),
+        settings.cache_employer_vacancies_ttl_seconds,
+    )
+    return response
 
 
 async def update_vacancy(
@@ -360,6 +429,7 @@ async def update_vacancy(
         )
         logger.info("Вакансия %s опубликована", locked.id)
 
+    await _invalidate_vacancy_caches(locked)
     return await _read(locked, owner=True)
 
 
@@ -409,6 +479,7 @@ async def _assign_image(vacancy: Vacancy) -> None:
     if image_url:
         vacancy.image_url = image_url
         await vacancy.save(update_fields=["image_url", "updated_at"])
+        await _invalidate_vacancy_caches(vacancy)
 
 
 def _ensure_publishable(

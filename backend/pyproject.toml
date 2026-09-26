@@ -21,6 +21,7 @@ dependencies = [
     # без системных зависимостей
     "pypdf>=5.1",
     "python-docx>=1.1",
+    "redis>=8.1.0",
 ]
 
 [dependency-groups]

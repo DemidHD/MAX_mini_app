@@ -20,6 +20,7 @@ from app.auth.router import router as auth_router
 from app.bot.dispatcher import close_bot
 from app.bot.webhook import setup_bot_webhook, subscribe_webhook
 from app.candidates.router import router as candidate_router
+from app.core import cache
 from app.core.config import settings
 from app.core.database import TORTOISE_ORM
 from app.core.errors import register_exception_handlers
@@ -41,6 +42,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     settings.storage_root.mkdir(parents=True, exist_ok=True)
     settings.avatars_dir.mkdir(parents=True, exist_ok=True)
     settings.resumes_dir.mkdir(parents=True, exist_ok=True)
+    # Недоступный при старте Redis не должен мешать API подняться — кэш
+    # просто остаётся выключенным (см. `app.core.cache`).
+    await cache.connect()
 
     async with AsyncExitStack() as stack:
         # RegisterTortoise, а не голый Tortoise.init: lifespan выполняется в
@@ -71,6 +75,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         finally:
             # Раздел 51: ресурсы maxapi освобождаются при остановке
             await close_bot()
+            await cache.disconnect()
     logger.info("Приложение остановлено")
 
 

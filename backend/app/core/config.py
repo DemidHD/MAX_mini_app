@@ -64,6 +64,23 @@ class Settings(BaseSettings):
     analytics_event_rate_limit_requests: int = 120
     analytics_event_rate_limit_window_seconds: int = 60
 
+    # --- Redis / кэш (не из тех-доки — раздел 72 относит Redis к опциональной
+    # инфраструктуре «при фактической необходимости», в том числе для cache) ---
+    # Пусто — кэш выключен, приложение работает напрямую с БД (раздел 83:
+    # P0 не может зависеть от внешнего обязательного сервиса).
+    redis_url: str = "redis://redis:6379/0"
+    # Отдельная БД Redis для pytest — так же, как TEST_DATABASE_URL для БД:
+    # DSN по умолчанию указывает на хост `redis` из сети Docker Compose, а с
+    # машины разработчика (pytest) это имя не резолвится.
+    test_redis_url: str = ""
+    # TTL — по типу данных (задача явно требует не одно число на всё):
+    # сессия почти никогда не меняется, вакансия работодателя правится чаще,
+    # чем открывается кем-то другим.
+    cache_session_ttl_seconds: int = 60
+    cache_feed_pool_ttl_seconds: int = 60
+    cache_vacancy_view_ttl_seconds: int = 60
+    cache_employer_vacancies_ttl_seconds: int = 30
+
     # --- Вакансии ---
     # Ограничение не из тех-доки — продуктовое решение против засорения
     # кабинета брошенными черновиками. Считаются только `status = draft`;
