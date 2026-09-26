@@ -2,14 +2,15 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
-import type { Vacancy } from '@/api/hiring'
+import { applyToVacancy, getFeed } from '@/api/hiring'
+import type { VacancySummary } from '@/api/hiring'
+import { CoverImage } from '@/components/CoverImage'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { LoadingScreen } from '@/components/LoadingScreen'
 import { vacancyFacts } from '@/components/VacancyFacts'
 import { CheckIcon, CloseIcon, InfoIcon, PinIcon, SendIcon, SlidersIcon } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
 import { formatSalaryRange, plural } from '@/lib/format'
-import { applyToVacancy, getFeed } from '@/mocks/demoApi'
 import { useApply } from '@/pages/candidate/useApply'
 import './VacancyFeedPage.css'
 
@@ -29,7 +30,7 @@ export function VacancyFeedPage() {
     return <ErrorScreen error={state.error} onRetry={reload} />
   }
 
-  const vacancies = state.data
+  const vacancies = state.data.items
   const vacancy = vacancies[index]
 
   if (!vacancy) {
@@ -94,12 +95,13 @@ export function VacancyFeedPage() {
   )
 }
 
-function FeedCard({ vacancy }: { vacancy: Vacancy }) {
+function FeedCard({ vacancy }: { vacancy: VacancySummary }) {
   const required = vacancy.criteria.filter((criterion) => criterion.required).length
   const city = vacancy.criteria.find((criterion) => criterion.type === 'location')?.value.city
 
   return (
-    <article className="feedCard photoSlot photoSlot--dark">
+    <article className="feedCard photoSlot photoSlot--dark photoSlot--shade">
+      <CoverImage url={vacancy.image_url} />
       <div className="feedCard__top">
         {typeof city === 'string' ? (
           <span className="feedCard__city">

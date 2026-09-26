@@ -1,30 +1,43 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Avatar, Typography } from '@maxhub/max-ui'
 
 import { routes } from '@/app/routes'
 import { avatarUrl } from '@/api/users'
+import { getEmployerVacancies } from '@/api/hiring'
+import type { Page, Vacancy } from '@/api/hiring'
+import type { User } from '@/api/types'
+import { DRAFT_LIMIT } from '@/api/vacancies'
+import { VacancyCard } from '@/components/VacancyTile'
+import { DeleteDraftDialog, DraftLimitDialog } from '@/features/vacancyCreate/DeleteDraftDialog'
+import { useAsync } from '@/hooks/useAsync'
+import type { AsyncState } from '@/hooks/useAsync'
 import { useAuth } from '@/auth/useAuth'
 import heroPhoto from '@/assets/employer-home-hero.webp'
 import './EmployerHomePage.css'
 
 /**
  * Главная работодателя (экран E01 в UX-карте, `current_step = employer_home`
- * в разделе 7 тех-доки).
- *
- * У backend пока нет эндпоинта списка вакансий работодателя (в тех-доке,
- * раздел 27, есть только `POST /vacancies`, `GET /vacancies/:id` и
- * `GET /vacancies/feed` — `GET /employer/vacancies` из UX-карты ещё не
- * реализован). Блок «Мои вакансии» поэтому показывает честный пустой
- * экран, а не выдуманные карточки: у любого нового работодателя вакансий
- * действительно пока нет. Как только эндпоинт появится на backend, здесь
- * нужно будет заменить пустое состояние на реальный список.
+ * в разделе 7 тех-доки). Список «Мои вакансии» — `GET /employer/vacancies`,
+ * черновики в нём можно продолжить или удалить. Новых черновиков не больше
+ * `DRAFT_LIMIT`: лимит проверяет backend, главная заранее объясняет его.
  */
 export function EmployerHomePage() {
   const { state } = useAuth()
   if (state.status !== 'authenticated') {
     return null
   }
-  const { user } = state
+  return <EmployerHome user={state.user} />
+}
+
+type Dialog = { kind: 'limit' } | { kind: 'delete'; vacancy: Vacancy } | null
+
+function EmployerHome({ user }: { user: User }) {
+  const { state: vacancies, reload } = useAsync((signal) => getEmployerVacancies(signal, 50), [])
+  const [dialog, setDialog] = useState<Dialog>(null)
+  const draftsCount =
+    vacancies.status === 'success' ? vacancies.data.items.filter((item) => item.status === 'draft').length : 0
+  const limitReached = draftsCount >= DRAFT_LIMIT
 
   return (
     <div className="employerHome">
@@ -44,13 +57,6 @@ export function EmployerHomePage() {
               )}
             </Avatar.Container>
           </Link>
-
-          {/* Уведомлений на backend ещё нет (P0 — только бот-сообщения, раздел
-              46 тех-доки; экрана со списком уведомлений в API нет вовсе) —
-              иконка декоративная, без обработчика и без выдуманного счётчика. */}
-          <span className="employerHome__bell" aria-hidden="true">
-            <BellIcon />
-          </span>
         </div>
       </header>
 
@@ -73,9 +79,16 @@ export function EmployerHomePage() {
             за пару минут
           </Typography.Body>
 
-          <Link to={routes.employerVacancyCreate} className="employerHero__cta">
-            Создать вакансию
-          </Link>
+          {limitReached ? (
+            <button type="button" className="employerHero__cta" onClick={() => setDialog({ kind: 'limit' })}>
+              Создать вакансию
+            </button>
+          ) : (
+            // P1: сначала свободный текст (E11); ручная форма E02 — ссылкой оттуда.
+            <Link to={routes.employerVacancyAi} state={{ fresh: true }} className="employerHero__cta">
+              Создать вакансию
+            </Link>
+          )}
         </div>
       </section>
 
@@ -88,13 +101,29 @@ export function EmployerHomePage() {
           </Link>
         </div>
 
-        <div className="employerVacancies__empty">
-          <Typography.Body className="employerVacancies__emptyTitle">Пока нет вакансий</Typography.Body>
-          <Typography.Body className="employerVacancies__emptyText">
-            Создайте первую — она появится здесь
+        {draftsCount > 0 ? (
+          <Typography.Body
+            className={`employerVacancies__drafts${limitReached ? ' employerVacancies__drafts--full' : ''}`}
+          >
+            Черновиков: {draftsCount} из {DRAFT_LIMIT}
           </Typography.Body>
-        </div>
+        ) : null}
+
+        <MyVacancies state={vacancies} reload={reload} onDelete={(vacancy) => setDialog({ kind: 'delete', vacancy })} />
       </section>
+
+      {dialog?.kind === 'limit' ? <DraftLimitDialog limit={DRAFT_LIMIT} onClose={() => setDialog(null)} /> : null}
+      {dialog?.kind === 'delete' ? (
+        <DeleteDraftDialog
+          vacancyId={dialog.vacancy.id}
+          title={dialog.vacancy.title}
+          onClose={() => setDialog(null)}
+          onDeleted={() => {
+            setDialog(null)
+            reload()
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -105,21 +134,6 @@ function greetingForNow(): string {
   if (hour < 12) return 'Доброе утро'
   if (hour < 18) return 'Добрый день'
   return 'Добрый вечер'
-}
-
-function BellIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M6 10a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 14 6 10Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M10 19a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  )
 }
 
 function ChevronIcon() {
@@ -133,5 +147,44 @@ function ChevronIcon() {
         strokeLinejoin="round"
       />
     </svg>
+  )
+}
+
+function MyVacancies({
+  state,
+  reload,
+  onDelete,
+}: {
+  state: AsyncState<Page<Vacancy>>
+  reload: () => void
+  onDelete: (vacancy: Vacancy) => void
+}) {
+  if (state.status === 'loading') {
+    return <div className="employerVacancies__skeleton" aria-label="Загрузка" />
+  }
+  if (state.status === 'error') {
+    return (
+      <div className="employerVacancies__empty">
+        <Typography.Body className="employerVacancies__emptyTitle">Не удалось загрузить вакансии</Typography.Body>
+        <button type="button" className="employerVacancies__retry" onClick={reload}>
+          Повторить
+        </button>
+      </div>
+    )
+  }
+  if (state.data.items.length === 0) {
+    return (
+      <div className="employerVacancies__empty">
+        <Typography.Body className="employerVacancies__emptyTitle">Пока нет вакансий</Typography.Body>
+        <Typography.Body className="employerVacancies__emptyText">Создайте первую — она появится здесь</Typography.Body>
+      </div>
+    )
+  }
+  return (
+    <div className="employerVacancies__track">
+      {state.data.items.map((vacancy) => (
+        <VacancyCard key={vacancy.id} vacancy={vacancy} onDelete={() => onDelete(vacancy)} />
+      ))}
+    </div>
   )
 }

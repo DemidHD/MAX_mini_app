@@ -10,12 +10,11 @@ import './VacancyPublishedPage.css'
 
 /**
  * Шаг 4 — экран E05 «Вакансия опубликована». Доступен только после реального
- * успешного `createVacancy` (раздел «Данные с backend» — здесь этого
- * эндпоинта пока нет, см. `api/vacancies.ts`), поэтому без `publishedVacancy`
- * в контексте экран не рисует выдуманную вакансию, а уводит на главную.
+ * успешного `createVacancy`, поэтому без `publishedVacancy` в контексте экран
+ * не рисует выдуманную вакансию, а уводит на главную.
  */
 export function VacancyPublishedPage() {
-  const { draft, publishedVacancy, resetDraft } = useVacancyDraft()
+  const { publishedVacancy } = useVacancyDraft()
   const [copied, setCopied] = useState(false)
 
   if (!publishedVacancy) {
@@ -23,7 +22,8 @@ export function VacancyPublishedPage() {
   }
   const vacancy = publishedVacancy
 
-  const publicUrl = vacancy.public_token ? `${window.location.origin}/v/${vacancy.public_token}` : null
+  // Ссылку `{APP_URL}/v/{public_token}` собирает backend (раздел 15).
+  const publicUrl = vacancy.public_url
 
   async function handleCopy() {
     if (!publicUrl) return
@@ -67,13 +67,20 @@ export function VacancyPublishedPage() {
           <span className="vacancyPublished__status">Опубликована</span>
           <span className="vacancyPublished__cardTitle">{vacancy.title}</span>
           <span className="vacancyPublished__cardSalary">
-            {formatSalaryRange(draft.salaryMin, draft.salaryMax)}
+            {formatSalaryRange(vacancy.salary_min ?? '', vacancy.salary_max ?? '')}
           </span>
           <span className="vacancyPublished__cardMeta">
             {vacancy.location} · {vacancy.schedule}
           </span>
           <span className="vacancyPublished__cardPhoto">
-            <img src={heroPhoto} alt="" />
+            <img
+              src={vacancy.image_url ?? heroPhoto}
+              alt=""
+              referrerPolicy="no-referrer"
+              onError={(event) => {
+                if (!event.currentTarget.src.endsWith(heroPhoto)) event.currentTarget.src = heroPhoto
+              }}
+            />
           </span>
         </div>
       </div>
@@ -90,10 +97,10 @@ export function VacancyPublishedPage() {
         </div>
       ) : null}
 
-      <Link to={routes.employerVacancySlots(vacancy.id)} className="vacancyPublished__primary" onClick={() => resetDraft()}>
+      <Link to={routes.employerVacancySlots(vacancy.id)} className="vacancyPublished__primary">
         Добавить интервалы
       </Link>
-      <Link to={routes.employerVacancyCandidates(vacancy.id)} className="vacancyPublished__secondary" onClick={() => resetDraft()}>
+      <Link to={routes.employerVacancyCandidates(vacancy.id)} className="vacancyPublished__secondary">
         Смотреть кандидатов
       </Link>
 

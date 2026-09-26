@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
+import { ApiError } from '@/api/client'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { LoadingScreen } from '@/components/LoadingScreen'
 import {
@@ -19,16 +20,21 @@ import {
 import { SCHEDULE_OPTIONS } from '@/features/vacancyCreate/draft'
 import { useAsync } from '@/hooks/useAsync'
 import { dayKey, formatExperience, formatReadyShort, formatSalaryRange } from '@/lib/format'
-import { getCandidateProfile, saveCandidateProfile } from '@/mocks/demoApi'
-import type { CandidateProfileData } from '@/mocks/demoApi'
+import { getCandidateProfile, updateCandidateProfile } from '@/api/hiring'
+import type { CandidateProfile } from '@/api/hiring'
 import { ProfileFieldSheet } from '@/pages/candidate/ProfileFieldSheet'
 import type { ProfileField } from '@/pages/candidate/ProfileFieldSheet'
+import artCalendar from '@/assets/art-calendar.webp'
+import profileCity from '@/assets/profile-city.webp'
+import profileRole from '@/assets/profile-role.webp'
+import profileSchedule from '@/assets/profile-schedule.webp'
 import './CandidateProfilePage.css'
 
 /**
  * C01 «Профиль кандидата»: минимум данных для подбора вакансий (раздел 14
- * тех-доки). Каждая карточка открывает редактирование поля; «Загрузить
- * резюме» — функция P2 (C11), поэтому в P0 видна, но неактивна.
+ * тех-доки; `GET/PATCH /candidate/profile`). Каждая карточка открывает
+ * редактирование поля; «Загрузить резюме» — функция P2 (C11), поэтому в P0
+ * видна, но неактивна.
  */
 export function CandidateProfilePage() {
   const navigate = useNavigate()
@@ -38,17 +44,27 @@ export function CandidateProfilePage() {
   if (state.status === 'error') {
     return <ErrorScreen error={state.error} onRetry={reload} onBack={() => navigate(-1)} />
   }
-  return <ProfileForm initial={state.data} />
+  return <ProfileForm initial={state.data ?? EMPTY_PROFILE} />
 }
 
-function ProfileForm({ initial }: { initial: CandidateProfileData }) {
+/** Нового кандидата профиль ещё не создан — `GET` отвечает 404. */
+const EMPTY_PROFILE: CandidateProfile = {
+  desired_role: '',
+  city: null,
+  salary: null,
+  schedule: null,
+  experience_months: null,
+  available_from: null,
+}
+
+function ProfileForm({ initial }: { initial: CandidateProfile }) {
   const navigate = useNavigate()
   const [profile, setProfile] = useState(initial)
   const [editing, setEditing] = useState<ProfileField | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const update = (patch: Partial<CandidateProfileData>) => {
+  const update = (patch: Partial<CandidateProfile>) => {
     setProfile((previous) => ({ ...previous, ...patch }))
     setError(null)
   }
@@ -62,10 +78,23 @@ function ProfileForm({ initial }: { initial: CandidateProfileData }) {
     setSaving(true)
     setError(null)
     try {
-      await saveCandidateProfile(profile)
+      // Только поля профиля: GET отдаёт ещё user_id и даты, их не отправляем.
+      const { city, salary, schedule, experience_months, available_from } = profile
+      await updateCandidateProfile({
+        desired_role: profile.desired_role.trim(),
+        city,
+        salary,
+        schedule,
+        experience_months,
+        available_from,
+      })
       navigate(routes.candidateFeed)
-    } catch {
-      setError('Не удалось сохранить профиль. Данные на месте — попробуйте еще раз.')
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError && cause.status === 422
+          ? 'Проверьте поля профиля: одно из значений не подходит.'
+          : 'Не удалось сохранить профиль. Данные на месте — попробуйте еще раз.',
+      )
     } finally {
       setSaving(false)
     }
@@ -84,6 +113,17 @@ function ProfileForm({ initial }: { initial: CandidateProfileData }) {
           вы ищете?
         </h1>
         <AccentMarks className="profileSetup__marks" />
+        {/* Рукописная заметка со стрелкой — декор из макета C01. */}
+        <span className="profileSetup__note" aria-hidden="true">
+          Больше
+          <br />
+          возможностей
+          <br />
+          рядом
+          <svg className="profileSetup__noteArrow" viewBox="0 0 24 24" fill="none">
+            <path d="M18 3c1 7-3 12-11 14M7 17l1-5M7 17l5 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
       </div>
       <p className="screen__subtitle profileSetup__subtitle">Настроим ленту под вас</p>
 
@@ -95,6 +135,7 @@ function ProfileForm({ initial }: { initial: CandidateProfileData }) {
           value={profile.desired_role || 'Не указана'}
           valueClass="profileCard__value--large"
           art="profileCard__art--role"
+          artSrc={profileRole}
           invalid={error !== null && !profile.desired_role.trim()}
           onClick={() => setEditing('desired_role')}
         />
@@ -104,6 +145,7 @@ function ProfileForm({ initial }: { initial: CandidateProfileData }) {
           label="Город"
           value={profile.city || 'Не указан'}
           art="profileCard__art--city"
+          artSrc={profileCity}
           chevronTop
           onClick={() => setEditing('city')}
         />
@@ -130,13 +172,14 @@ function ProfileForm({ initial }: { initial: CandidateProfileData }) {
             profile.schedule ? <span className="profileCard__chip">{profile.schedule}</span> : 'Не указан'
           }
           art="profileCard__art--schedule"
+          artSrc={profileSchedule}
           onClick={() => setEditing('schedule')}
         />
 
         <FieldCard
           icon={<GraduationIcon size={24} />}
           label="Опыт"
-          value={formatExperience(profile.experience_months)}
+          value={profile.experience_months === null ? 'Не указан' : formatExperience(profile.experience_months)}
           chevronTop
           onClick={() => setEditing('experience_months')}
         >
@@ -160,6 +203,7 @@ function ProfileForm({ initial }: { initial: CandidateProfileData }) {
           label="Готов выйти"
           value={formatReadyShort(profile.available_from)}
           art="profileCard__art--ready"
+          artSrc={artCalendar}
           chevronTop
           onClick={() => setEditing('available_from')}
         />
@@ -201,6 +245,7 @@ function FieldCard({
   value,
   valueClass = '',
   art,
+  artSrc,
   wide = false,
   chevronTop = false,
   invalid = false,
@@ -212,6 +257,7 @@ function FieldCard({
   value: ReactNode
   valueClass?: string
   art?: string
+  artSrc?: string
   wide?: boolean
   chevronTop?: boolean
   invalid?: boolean
@@ -227,14 +273,25 @@ function FieldCard({
       <span className="profileCard__icon">{icon}</span>
       <span className="profileCard__text">
         <span className="profileCard__label">{label}</span>
-        <span className={`profileCard__value ${valueClass}`}>{value}</span>
+        <span className={`profileCard__value ${valueClass}${isEmptyValue(value) ? ' profileCard__value--empty' : ''}`}>
+          {value}
+        </span>
       </span>
-      {/* Место под фото/иллюстрацию из макета — картинки добавятся отдельно. */}
-      {art ? <span className={`profileCard__art ${art}`} aria-hidden="true" /> : null}
+      {/* Иллюстрация из макета; у карточек без картинки остаётся пустое место. */}
+      {art ? (
+        <span className={`profileCard__art ${art}`} aria-hidden="true">
+          {artSrc ? <img src={artSrc} alt="" /> : null}
+        </span>
+      ) : null}
       {children}
       <span className={`profileCard__chevron${chevronTop ? ' profileCard__chevron--top' : ''}`} aria-hidden="true">
         <ChevronRightIcon size={22} />
       </span>
     </button>
   )
+}
+
+/** Незаполненное поле показывается приглушённо, как подсказка. */
+function isEmptyValue(value: ReactNode): boolean {
+  return typeof value === 'string' && value.startsWith('Не указан')
 }

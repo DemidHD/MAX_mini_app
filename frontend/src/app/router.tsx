@@ -1,5 +1,4 @@
 import { createBrowserRouter } from 'react-router-dom'
-import type { RouteObject } from 'react-router-dom'
 
 import { AppLayout } from '@/components/AppLayout'
 import { CandidateLayout } from '@/components/CandidateLayout'
@@ -11,11 +10,14 @@ import { ProfilePage } from '@/pages/ProfilePage'
 import { RoleSelectionPage } from '@/pages/RoleSelectionPage'
 import { RootRedirect } from '@/pages/RootRedirect'
 import { StubPage } from '@/pages/StubPage'
+import { VacancyAiCheckPage } from '@/pages/VacancyAiCheckPage'
+import { VacancyAiTextPage } from '@/pages/VacancyAiTextPage'
 import { VacancyBasicsPage } from '@/pages/VacancyBasicsPage'
 import { VacancyCriteriaPage } from '@/pages/VacancyCriteriaPage'
 import { VacancyPreviewPage } from '@/pages/VacancyPreviewPage'
 import { VacancyPublicPage } from '@/pages/VacancyPublicPage'
 import { VacancyPublishedPage } from '@/pages/VacancyPublishedPage'
+import { VacancyVoicePage } from '@/pages/VacancyVoicePage'
 import { ApplicationStatusPage } from '@/pages/candidate/ApplicationStatusPage'
 import { CandidateProfilePage } from '@/pages/candidate/CandidateProfilePage'
 import { InterviewScheduledPage } from '@/pages/candidate/InterviewScheduledPage'
@@ -25,17 +27,18 @@ import { ScreeningStartPage } from '@/pages/candidate/ScreeningStartPage'
 import { SlotPickerPage } from '@/pages/candidate/SlotPickerPage'
 import { VacancyDetailsPage } from '@/pages/candidate/VacancyDetailsPage'
 import { VacancyFeedPage } from '@/pages/candidate/VacancyFeedPage'
-import { DevScreensPage } from '@/pages/DevScreensPage'
 import { CandidateCardPage } from '@/pages/employer/CandidateCardPage'
 import { CandidatesQueuePage } from '@/pages/employer/CandidatesQueuePage'
+import { HiringBoardPage } from '@/pages/employer/HiringBoardPage'
 import { InterviewDetailsPage } from '@/pages/employer/InterviewDetailsPage'
 import { InterviewSlotsPage } from '@/pages/employer/InterviewSlotsPage'
 import { InviteConfirmPage } from '@/pages/employer/InviteConfirmPage'
+import { RejectReasonPage } from '@/pages/employer/RejectReasonPage'
+import { ReservePage } from '@/pages/employer/ReservePage'
+import { VacanciesPage } from '@/pages/employer/VacanciesPage'
+import { EditDraftPage } from '@/features/vacancyCreate/EditDraftPage'
 import { VacancyCreateLayout } from '@/features/vacancyCreate/VacancyCreateLayout'
 import { routes } from '@/app/routes'
-
-// Оглавление экранов с демо-данными — только для локальной разработки.
-const devRoutes: RouteObject[] = import.meta.env.DEV ? [{ path: routes.devScreens, element: <DevScreensPage /> }] : []
 
 export const router = createBrowserRouter([
   {
@@ -69,9 +72,11 @@ export const router = createBrowserRouter([
         element: <EmployerLayout />,
         children: [
           { path: routes.employerHome, element: <EmployerHomePage /> },
-          { path: routes.employerVacancyList, element: <StubPage title="Вакансии" /> },
-          { path: routes.employerCandidates, element: <StubPage title="Кандидаты" /> },
+          { path: routes.employerVacancyList, element: <VacanciesPage /> },
           { path: routes.employerVacancyCandidates(), element: <CandidatesQueuePage /> },
+          // P1: доска найма (E15) и резерв (E16).
+          { path: routes.employerCandidates, element: <HiringBoardPage /> },
+          { path: routes.employerReserve, element: <ReservePage /> },
         ],
       },
       {
@@ -83,14 +88,19 @@ export const router = createBrowserRouter([
           { path: routes.employerVacancyCriteria, element: <VacancyCriteriaPage /> },
           { path: routes.employerVacancyPreview, element: <VacancyPreviewPage /> },
           { path: routes.employerVacancyPublished, element: <VacancyPublishedPage /> },
+          { path: routes.employerVacancyEdit(), element: <EditDraftPage /> },
+          // P1: ИИ-разбор текста (E11 → E12) и голосовой ввод (E13).
+          { path: routes.employerVacancyAi, element: <VacancyAiTextPage /> },
+          { path: routes.employerVacancyAiCheck, element: <VacancyAiCheckPage /> },
+          { path: routes.employerVacancyVoice, element: <VacancyVoicePage /> },
         ],
       },
       { path: routes.employerVacancySlots(), element: <InterviewSlotsPage /> },
       { path: routes.employerApplication(), element: <CandidateCardPage /> },
       { path: routes.employerApplicationInvite(), element: <InviteConfirmPage /> },
+      { path: routes.employerApplicationReject(), element: <RejectReasonPage /> },
       { path: routes.employerInterview(), element: <InterviewDetailsPage /> },
 
-      ...devRoutes,
       { path: '*', element: <NotFoundPage /> },
     ],
   },

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Typography } from '@maxhub/max-ui'
@@ -7,7 +8,21 @@ import { useVacancyDraft } from '@/features/vacancyCreate/useVacancyDraft'
 import { VacancyStepHeader } from '@/features/vacancyCreate/VacancyStepHeader'
 import { availableFromLabel, experienceLabel } from '@/features/vacancyCreate/draft'
 import type { CriterionKey } from '@/features/vacancyCreate/draft'
+import criterionSchedule from '@/assets/criterion-schedule.webp'
+import criterionLocation from '@/assets/criterion-location.webp'
+import criterionExperience from '@/assets/criterion-experience.webp'
+import criterionAvailableFrom from '@/assets/criterion-available-from.webp'
+import criterionSalary from '@/assets/criterion-salary.webp'
 import './VacancyCriteriaPage.css'
+
+/** Фото-превью справа в карточке условия — оформление из макета E03. */
+const CRITERION_ART: Record<CriterionKey, string> = {
+  schedule: criterionSchedule,
+  location: criterionLocation,
+  experience: criterionExperience,
+  available_from: criterionAvailableFrom,
+  salary: criterionSalary,
+}
 
 interface CriterionRow {
   key: CriterionKey
@@ -18,8 +33,24 @@ interface CriterionRow {
 
 /** Шаг 2 создания вакансии — экран «Что действительно важно?» в UX-карте. */
 export function VacancyCriteriaPage() {
-  const { draft, setCriterionRequired } = useVacancyDraft()
+  const { draft, setCriterionRequired, saveDraft } = useVacancyDraft()
   const navigate = useNavigate()
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Условия (и вопросы отбора из них) сохраняются в серверный черновик.
+  async function handleNext() {
+    setSaving(true)
+    setError(null)
+    try {
+      await saveDraft()
+      navigate(routes.employerVacancyPreview)
+    } catch {
+      setError('Не удалось сохранить условия. Попробуйте еще раз.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const rows: CriterionRow[] = [
     { key: 'schedule', icon: <CalendarIcon />, label: 'График', value: draft.schedule },
@@ -57,6 +88,7 @@ export function VacancyCriteriaPage() {
         <div className="vacancyCriteria__list">
           {rows.map((row) => (
             <div className="criterionCard" key={row.key}>
+              <img className="criterionCard__art" src={CRITERION_ART[row.key]} alt="" aria-hidden="true" />
               <div className="criterionCard__top">
                 <span className="criterionCard__icon">{row.icon}</span>
                 <span className="criterionCard__text">
@@ -95,8 +127,10 @@ export function VacancyCriteriaPage() {
           </Typography.Body>
         </div>
 
-        <button type="button" className="vacancyCriteria__next" onClick={() => navigate(routes.employerVacancyPreview)}>
-          Предпросмотр
+        {error ? <Typography.Body className="vacancyCriteria__error">{error}</Typography.Body> : null}
+
+        <button type="button" className="vacancyCriteria__next" disabled={saving} onClick={() => void handleNext()}>
+          {saving ? 'Сохраняем…' : 'Предпросмотр'}
         </button>
       </div>
     </div>

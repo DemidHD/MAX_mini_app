@@ -1,15 +1,19 @@
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
-import type { CandidateApplication } from '@/api/hiring'
+import { getApplication, getScreening } from '@/api/hiring'
+import type { ApplicationStatus, CandidateApplication, ScreeningResult, ScreeningState, Vacancy } from '@/api/hiring'
 import { BackButton } from '@/components/BackButton'
+import { CoverImage } from '@/components/CoverImage'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { LoadingScreen } from '@/components/LoadingScreen'
 import { ProgressSteps } from '@/components/ProgressSteps'
 import { BellIcon, BookmarkIcon, ClockIcon, InfoIcon } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
 import { CRITERION_MISMATCH_REASONS, CRITERION_TITLES, criterionLabel, formatSalaryRange, plural } from '@/lib/format'
-import { getCandidateApplication } from '@/mocks/demoApi'
+import artCalendar from '@/assets/art-calendar.webp'
+import artMismatch from '@/assets/art-mismatch.webp'
+import artPlane from '@/assets/art-plane.webp'
 import './ApplicationStatusPage.css'
 
 /**
@@ -17,51 +21,77 @@ import './ApplicationStatusPage.css'
  * application_status` (раздел 7). По статусу показывает C06 «Не прошёл
  * обязательное условие» или C07 «Отклик ожидает решения»; при взаимном
  * интересе и назначенном интервью уводит в M01 / C10.
+ *
+ * Статус, вакансию и несовпавшие условия даёт `GET /applications/{id}`;
+ * вопросы отбора (`GET .../screening`) нужны, чтобы назвать отсекающий
+ * вопрос сразу после отправки ответов.
  */
 export function ApplicationStatusPage() {
   const applicationId = Number(useParams().applicationId)
   const navigate = useNavigate()
-  const { state, reload } = useAsync((signal) => getCandidateApplication(applicationId, signal), [applicationId])
+  const submitted = (useLocation().state as { screening?: ScreeningResult } | null)?.screening
+  const { state, reload } = useAsync(async (signal) => {
+    const [application, screening] = await Promise.all([
+      getApplication(applicationId, signal),
+      getScreening(applicationId, signal),
+    ])
+    return { application, screening }
+  }, [applicationId])
 
   if (state.status === 'loading') return <LoadingScreen />
   if (state.status === 'error') {
     return <ErrorScreen error={state.error} onRetry={reload} onBack={() => navigate(routes.candidateFeed)} />
   }
 
-  const application = state.data
+  const { application, screening } = state.data
+  const { vacancy } = application
   switch (application.status) {
     case 'created':
     case 'screening':
-      return <Navigate to={routes.candidateScreeningStart(application.id)} replace />
+      return <Navigate to={routes.candidateScreeningStart(applicationId)} replace />
     case 'hard_filter_failed':
-      return <HardFilterFailed application={application} />
+      return (
+        <HardFilterFailed application={application} screening={screening} vacancy={vacancy} submitted={submitted} />
+      )
     case 'mutual_interest':
-      if (application.match_id !== null) return <Navigate to={routes.candidateMatch(application.match_id)} replace />
-      break
+      return <Navigate to={routes.candidateMatch(vacancy.id)} replace />
     case 'interview_scheduled':
     case 'interview_completed':
-      if (application.interview_id !== null) {
-        return <Navigate to={routes.candidateInterview(application.interview_id)} replace />
-      }
-      break
+      return <Navigate to={routes.candidateInterview(vacancy.id)} replace />
+    default:
+      return <ApplicationPending status={application.status} vacancy={vacancy} />
   }
-  return <ApplicationPending application={application} />
 }
 
-/** C06: нейтральный итог без оценки личности — причина на уровне требования. */
-function HardFilterFailed({ application }: { application: CandidateApplication }) {
+/**
+ * C06: нейтральный итог без оценки личности — причина на уровне требования.
+ * Несовпавшие условия backend отдаёт и при повторном открытии
+ * (`failed_criteria` в `GET /applications/{id}`). Отсекающий вопрос отбора
+ * известен только из ответа на отправку — после перезагрузки его нет.
+ */
+function HardFilterFailed({
+  application,
+  screening,
+  vacancy,
+  submitted,
+}: {
+  application: CandidateApplication
+  screening: ScreeningState
+  vacancy: Vacancy
+  submitted?: ScreeningResult
+}) {
   const navigate = useNavigate()
-  const failed = application.failed_criteria
+  const failed = submitted?.failed_criteria ?? application.failed_criteria
+  const failedQuestion = screening.questions.find((question) => submitted?.failed_questions.includes(question.id))
   const first = failed[0]
-  const criterion = application.vacancy.criteria.find((item) => item.type === first)
-  const count = Math.max(failed.length, 1)
+  const criterion = vacancy.criteria.find((item) => item.type === first)
+  const count = Math.max(failed.length + (submitted?.failed_questions.length ?? 0), 1)
   const countWord = count === 1 ? 'одно обязательное условие' : `${count} обязательных ${plural(count, 'условие', 'условия', 'условий')}`
 
   return (
     <div className="screen applicationStatus applicationStatus--failed">
       <BackButton onClick={() => navigate(routes.candidateFeed)} />
-      {/* Место под иллюстрацию из макета — добавится отдельно. */}
-      <span className="applicationStatus__art applicationStatus__art--failed" aria-hidden="true" />
+      <img className="applicationStatus__art applicationStatus__art--failed" src={artMismatch} alt="" aria-hidden="true" />
 
       <span className="screen__eyebrow applicationStatus__eyebrow">Результат</span>
       <h1 className="screen__title applicationStatus__title">
@@ -78,18 +108,28 @@ function HardFilterFailed({ application }: { application: CandidateApplication }
             i
           </span>
         </div>
-        <span className="mismatchCard__title">
-          {criterion ? criterionLabel(criterion) : first ? CRITERION_TITLES[first] : 'Обязательное условие'}
-        </span>
-        <span className="mismatchCard__reason">
-          {first ? CRITERION_MISMATCH_REASONS[first] : 'Ответ не совпал с условием вакансии'}
-        </span>
+        {first || !failedQuestion ? (
+          <>
+            <span className="mismatchCard__title">
+              {criterion ? criterionLabel(criterion) : first ? CRITERION_TITLES[first] : 'Обязательное условие'}
+            </span>
+            <span className="mismatchCard__reason">
+              {first ? CRITERION_MISMATCH_REASONS[first] : 'Одно из обязательных условий вакансии не совпало'}
+            </span>
+          </>
+        ) : (
+          <>
+            {/* Не прошёл отсекающий вопрос отбора — показываем сам вопрос. */}
+            <span className="mismatchCard__title mismatchCard__title--question">{failedQuestion.question}</span>
+            <span className="mismatchCard__reason">Ответ не совпал с условием вакансии</span>
+          </>
+        )}
         {failed.length > 1 ? (
           <span className="mismatchCard__more">
             Еще: {failed.slice(1).map((type) => CRITERION_TITLES[type].toLowerCase()).join(', ')}
           </span>
         ) : null}
-        <span className="mismatchCard__art" aria-hidden="true" />
+        <img className="mismatchCard__art" src={artCalendar} alt="" aria-hidden="true" />
       </div>
 
       <p className="applicationStatus__note">
@@ -108,26 +148,27 @@ function HardFilterFailed({ application }: { application: CandidateApplication }
   )
 }
 
-const PENDING_LABELS: Partial<Record<CandidateApplication['status'], string>> = {
+const PENDING_LABELS: Partial<Record<ApplicationStatus, string>> = {
   rejected: 'Работодатель выбрал другого кандидата',
   invited: 'Работодатель приглашает вас',
 }
 
 /** C07: действие завершено, дальше решение работодателя. */
-function ApplicationPending({ application }: { application: CandidateApplication }) {
+function ApplicationPending({ status, vacancy }: { status: ApplicationStatus; vacancy: Vacancy }) {
   const navigate = useNavigate()
-  const { vacancy } = application
 
   return (
     <div className="screen applicationStatus">
       <BackButton onClick={() => navigate(routes.candidateFeed)} />
-      <span className="applicationStatus__art applicationStatus__art--sent" aria-hidden="true" />
+      <img className="applicationStatus__art applicationStatus__art--sent" src={artPlane} alt="" aria-hidden="true" />
 
       <h1 className="screen__title applicationStatus__sentTitle">Отклик отправлен</h1>
       <p className="screen__subtitle applicationStatus__sentSubtitle">Теперь решение за работодателем</p>
 
       <article className="pendingCard">
-        <div className="pendingCard__photo photoSlot" />
+        <div className="pendingCard__photo photoSlot">
+          <CoverImage url={vacancy.image_url} />
+        </div>
         <div className="pendingCard__body">
           <div className="pendingCard__head">
             <div>
@@ -142,7 +183,7 @@ function ApplicationPending({ application }: { application: CandidateApplication
           <span className="pendingCard__salary">{formatSalaryRange(vacancy.salary_min, vacancy.salary_max)}</span>
           <span className="pendingCard__status">
             <ClockIcon size={26} strokeWidth={1.9} />
-            {PENDING_LABELS[application.status] ?? 'Ожидает решения'}
+            {PENDING_LABELS[status] ?? 'Ожидает решения'}
           </span>
         </div>
       </article>

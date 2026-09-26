@@ -48,17 +48,6 @@
   line-height: 0;
 }
 
-.employerHome__bell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: #f0f2f6;
-  color: #0b0f2e;
-}
-
 /* ---------- Hero: «Кого ищем сегодня?» ---------- */
 
 .employerHero {
@@ -144,6 +133,10 @@
   white-space: nowrap;
   text-decoration: none;
   box-shadow: 0 8px 20px rgba(0, 20, 60, 0.18);
+  /* При лимите черновиков CTA — кнопка, а не ссылка. */
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
 }
 
 .employerHero__cta:active {
@@ -197,4 +190,53 @@
   display: block;
   color: #8b93a7;
   font-size: 14px;
+}
+
+.employerVacancies__retry {
+  margin-top: 8px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 999px;
+  background: #eaf1ff;
+  color: var(--button-primary, #007aff);
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.employerVacancies__skeleton {
+  height: 183px;
+  border-radius: 24px;
+  background: linear-gradient(90deg, #eef1f6, #f6f8fb, #eef1f6);
+}
+
+.employerVacancies__track {
+  display: flex;
+  gap: 12px;
+  margin: 0 -20px;
+  padding: 0 20px 8px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 20px;
+  scrollbar-width: none;
+}
+
+.employerVacancies__track::-webkit-scrollbar {
+  display: none;
+}
+
+/* В карусели главной видна следующая карточка. */
+.employerVacancies__track .vacancyTile {
+  flex: 0 0 72%;
+}
+
+.employerVacancies__drafts {
+  display: block;
+  margin: -6px 0 12px;
+  font-size: 14px;
+  color: #8b93a7;
+}
+
+.employerVacancies__drafts--full {
+  color: #c4291c;
 }

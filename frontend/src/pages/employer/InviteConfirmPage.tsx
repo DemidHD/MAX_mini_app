@@ -8,18 +8,25 @@ import { ErrorScreen } from '@/components/ErrorScreen'
 import { LoadingScreen } from '@/components/LoadingScreen'
 import { AccentMarks, CalendarIcon, CheckIcon, SendIcon } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
-import { candidateLabel, decide, getEmployerApplication } from '@/mocks/demoApi'
+import { candidateLabel, decide } from '@/api/hiring'
+import { loadApplicationView } from '@/pages/employer/applicationView'
 import './InviteConfirmPage.css'
 
 /**
- * E09 «Подтверждение приглашения»: защита от случайного нажатия. Повторное
- * приглашение дубль не создаёт — backend отвечает 409, и мы просто
- * возвращаемся к очереди (`POST /applications/:id/decision`, раздел 35).
+ * E09 «Подтверждение приглашения»: защита от случайного нажатия. Приглашение
+ * сразу создаёт взаимный интерес (`POST /applications/:id/decision`, разделы
+ * 35–36). Повторное дубль не создаёт — backend отвечает 409, и мы просто
+ * возвращаемся к очереди.
  */
 export function InviteConfirmPage() {
-  const applicationId = Number(useParams().applicationId)
+  const params = useParams()
+  const vacancyId = Number(params.vacancyId)
+  const applicationId = Number(params.applicationId)
   const navigate = useNavigate()
-  const { state, reload } = useAsync((signal) => getEmployerApplication(applicationId, signal), [applicationId])
+  const { state, reload } = useAsync(
+    (signal) => loadApplicationView(vacancyId, applicationId, signal),
+    [vacancyId, applicationId],
+  )
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -28,7 +35,7 @@ export function InviteConfirmPage() {
     return <ErrorScreen error={state.error} onRetry={reload} onBack={() => navigate(-1)} />
   }
 
-  const { vacancy, candidate } = state.data
+  const { vacancy, candidate, items } = state.data
   const required = candidate.hard_filters.filter((item) => item.required)
   const passed = required.filter((item) => item.passed === true).length
   const queuePath = routes.employerVacancyCandidates(vacancy.id)
@@ -69,7 +76,7 @@ export function InviteConfirmPage() {
         <div className="inviteConfirm__person">
           <span className="inviteConfirm__avatar photoSlot" aria-hidden="true" />
           <div className="inviteConfirm__personText">
-            <span className="inviteConfirm__name">{candidateLabel(applicationId)}</span>
+            <span className="inviteConfirm__name">{candidateLabel(items, applicationId)}</span>
             <span className="inviteConfirm__role">{candidate.desired_role ?? vacancy.title}</span>
             <span className="inviteConfirm__match">
               <span className="inviteConfirm__matchIcon">

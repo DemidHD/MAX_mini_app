@@ -28,9 +28,11 @@
   margin: 0 -20px;
 }
 
-.screeningStart__marks {
-  top: -30px;
-  right: 22px;
+.screeningStart__artImage {
+  position: absolute;
+  right: 28px;
+  bottom: 6px;
+  height: 250px;
 }
 
 .screeningStart__card {

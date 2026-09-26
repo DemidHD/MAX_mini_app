@@ -6,6 +6,8 @@ export interface AuthSession {
   user: User
   currentStep: CurrentStep
   applicationId: number | null
+  /** Черновик вакансии, в который вернуть работодателя (`vacancy_create`). */
+  vacancyId: number | null
 }
 
 export type AuthState =

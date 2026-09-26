@@ -186,9 +186,32 @@
 /* Место под фотографию/иллюстрацию. Сами изображения будут добавлены
    отдельно — до этого слот держит размеры и скругления макета. */
 .photoSlot {
+  position: relative;
+  /* Своё стековое окружение: фото (z-index −1) ложится поверх фона слота,
+     но под текст и кнопки карточки. */
+  isolation: isolate;
   display: block;
   background: linear-gradient(160deg, #dfe4ec 0%, #c9d0dc 100%);
   overflow: hidden;
+}
+
+.photoSlot img.photoSlot__cover {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Затемнение сверху и снизу, чтобы белый текст читался на любом фото. */
+.photoSlot--shade::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0) 32%, rgba(0, 0, 0, 0.72) 100%);
+  pointer-events: none;
 }
 
 .photoSlot--dark {

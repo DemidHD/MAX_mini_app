@@ -95,6 +95,8 @@ export const api = {
     request<T>(path, { method: 'POST', json, signal }),
   patch: <T>(path: string, json?: unknown, signal?: AbortSignal) =>
     request<T>(path, { method: 'PATCH', json, signal }),
+  postForm: <T>(path: string, body: FormData, signal?: AbortSignal) =>
+    request<T>(path, { method: 'POST', body, signal }),
   patchForm: <T>(path: string, body: FormData, signal?: AbortSignal) =>
     request<T>(path, { method: 'PATCH', body, signal }),
   delete: <T>(path: string, signal?: AbortSignal) => request<T>(path, { method: 'DELETE', signal }),

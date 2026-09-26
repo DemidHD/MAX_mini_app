@@ -1,34 +1,62 @@
+import type { ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
+import { BookmarkFilledIcon, BookmarkIcon, PeopleFilledIcon } from '@/components/icons'
 import './EmployerBottomNav.css'
 
-const ITEMS = [
-  { to: routes.employerHome, label: 'Главная', icon: HomeIcon, end: true },
-  { to: routes.employerVacancyList, label: 'Вакансии', icon: BriefcaseIcon, end: false },
-  { to: routes.employerCandidates, label: 'Кандидаты', icon: PeopleIcon, end: false },
-  { to: routes.profile, label: 'Профиль', icon: ProfileIcon, end: false },
-] as const
+interface NavItem {
+  to: string
+  label: string
+  icon: () => ReactNode
+  /** Залитая иконка активного пункта. */
+  activeIcon?: () => ReactNode
+  end: boolean
+}
+
+const HOME: NavItem = { to: routes.employerHome, label: 'Главная', icon: HomeIcon, end: true }
+const VACANCIES: NavItem = { to: routes.employerVacancyList, label: 'Вакансии', icon: BriefcaseIcon, end: false }
+const CANDIDATES: NavItem = {
+  to: routes.employerCandidates,
+  label: 'Кандидаты',
+  icon: PeopleIcon,
+  activeIcon: () => <PeopleFilledIcon size={26} />,
+  end: false,
+}
+const RESERVE: NavItem = {
+  to: routes.employerReserve,
+  label: 'Резерв',
+  icon: () => <BookmarkIcon size={24} strokeWidth={1.8} />,
+  activeIcon: () => <BookmarkFilledIcon size={26} />,
+  end: false,
+}
+const PROFILE: NavItem = { to: routes.profile, label: 'Профиль', icon: ProfileIcon, end: false }
+
+const ITEMS: NavItem[] = [HOME, VACANCIES, CANDIDATES, RESERVE, PROFILE]
 
 /**
- * Нижнее меню кабинета работодателя (экран E01 в UX-карте). Общее для всех
- * экранов работодателя — подключается через `EmployerLayout`, а не
+ * Нижнее меню кабинета работодателя — одно на всех его экранах, с разделом
+ * «Резерв» (функция 23). Подключается через `EmployerLayout`, а не
  * дублируется на каждой странице.
  */
 export function EmployerBottomNav() {
   return (
     <nav className="employerNav" aria-label="Разделы кабинета">
-      {ITEMS.map(({ to, label, icon: Icon, end }) => (
+      {ITEMS.map(({ to, label, icon: Icon, activeIcon: ActiveIcon, end }) => (
         <NavLink
           key={to}
           to={to}
           end={end}
           className={({ isActive }) => `employerNav__item${isActive ? ' employerNav__item--active' : ''}`}
         >
-          <span className="employerNav__iconWrap">
-            <Icon />
-          </span>
-          <span className="employerNav__label">{label}</span>
+          {({ isActive }) => (
+            <>
+              <span className="employerNav__iconWrap">
+                {isActive && ActiveIcon ? <ActiveIcon /> : <Icon />}
+              </span>
+              <span className="employerNav__label">{label}</span>
+            </>
+          )}
         </NavLink>
       ))}
     </nav>

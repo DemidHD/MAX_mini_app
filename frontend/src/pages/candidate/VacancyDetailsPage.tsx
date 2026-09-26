@@ -1,15 +1,16 @@
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
+import { applyToVacancy, getVacancy } from '@/api/hiring'
 import type { VacancyCriterion } from '@/api/hiring'
 import { BackButton } from '@/components/BackButton'
+import { CoverImage } from '@/components/CoverImage'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { LoadingScreen } from '@/components/LoadingScreen'
 import { criterionIcon, criterionLabel, splitCriteria, vacancyFacts } from '@/components/VacancyFacts'
 import { MoreIcon } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
 import { formatSalaryRange } from '@/lib/format'
-import { applyToVacancy, getVacancy } from '@/mocks/demoApi'
 import { useApply } from '@/pages/candidate/useApply'
 import './VacancyDetailsPage.css'
 
@@ -34,7 +35,8 @@ export function VacancyDetailsPage() {
 
   return (
     <div className="screen vacancyDetails">
-      <header className="vacancyDetails__hero photoSlot photoSlot--dark">
+      <header className="vacancyDetails__hero photoSlot photoSlot--dark photoSlot--shade">
+        <CoverImage url={vacancy.image_url} />
         <div className="vacancyDetails__heroTop">
           <BackButton variant="glass" onClick={() => navigate(routes.candidateFeed)} />
           <span className="vacancyDetails__more" aria-hidden="true">

@@ -29,6 +29,11 @@ export interface AuthMaxResponse {
   user: User
   current_step: CurrentStep
   application_id: number | null
+  /**
+   * Незаконченный черновик работодателя для шага `vacancy_create`. Backend
+   * ещё не отдаёт поле — без него работодатель попадает на пустую форму.
+   */
+  vacancy_id?: number | null
 }
 
 export interface ProfileUpdateRequest {

@@ -1,29 +1,33 @@
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
+import { getSlots, getVacancy } from '@/api/hiring'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { InterviewTicket, MaxNotice } from '@/components/InterviewTicket'
 import { LoadingScreen } from '@/components/LoadingScreen'
 import { useAsync } from '@/hooks/useAsync'
-import { getInterview } from '@/mocks/demoApi'
 import './InterviewScheduledPage.css'
 
 /**
  * C10 «Интервью назначено» — главный результат P0 для кандидата.
- * Повторное открытие показывает то же подтверждение (данные с backend).
+ * Повторное открытие показывает то же подтверждение: своё собеседование
+ * кандидат получает в `interviews` ответа `GET /vacancies/{id}/slots`.
  */
 export function InterviewScheduledPage() {
-  const interviewId = Number(useParams().interviewId)
+  const vacancyId = Number(useParams().vacancyId)
   const navigate = useNavigate()
-  const { state, reload } = useAsync((signal) => getInterview(interviewId, signal), [interviewId])
+  const { state, reload } = useAsync(async (signal) => {
+    const [vacancy, slots] = await Promise.all([getVacancy(vacancyId, signal), getSlots(vacancyId, signal)])
+    return { vacancy, interview: slots.interviews[0] ?? null }
+  }, [vacancyId])
 
   if (state.status === 'loading') return <LoadingScreen />
   if (state.status === 'error') {
     return <ErrorScreen error={state.error} onRetry={reload} onBack={() => navigate(routes.candidateFeed)} />
   }
 
-  const interview = state.data
-  const { vacancy } = interview
+  const { vacancy, interview } = state.data
+  if (!interview) return <Navigate to={routes.candidateMatchSlots(vacancyId)} replace />
 
   return (
     <div className="screen interviewScheduled">
@@ -36,16 +40,17 @@ export function InterviewScheduledPage() {
 
       <InterviewTicket
         headingLarge
-        startsAt={interview.starts_at}
+        imageUrl={vacancy.image_url}
+        startsAt={interview.slot.starts_at}
         heading={vacancy.title}
         subheading={vacancy.company_name}
         place={vacancy.location ?? 'Адрес уточнит работодатель'}
       />
 
       <MaxNotice tone="card">
-        {interview.notification_sent
-          ? 'Подробности отправлены вам в MAX'
-          : 'Интервью назначено. Уведомление в MAX придет чуть позже'}
+        {/* Доставку уведомления backend фронту не сообщает (раздел 48 —
+            журнал на сервере), поэтому формулировка без «уже получили». */}
+        Подробности придут вам в MAX
       </MaxNotice>
 
       <div className="screen__spacer" />

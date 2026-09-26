@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
+import { candidateLabel, getVacancy, getVacancyCandidates } from '@/api/hiring'
 import type { ApplicationStatus, EmployerCandidate } from '@/api/hiring'
 import { BackButton } from '@/components/BackButton'
 import { ErrorScreen } from '@/components/ErrorScreen'
@@ -9,7 +10,6 @@ import { LoadingScreen } from '@/components/LoadingScreen'
 import { ArrowRightIcon, BriefcaseIcon, CalendarIcon, CheckIcon, MoreIcon, RubleIcon, SortIcon } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
 import { formatAvailableFrom, formatExperience, formatMoney, plural } from '@/lib/format'
-import { candidateLabel, getVacancyCandidates } from '@/mocks/demoApi'
 import './CandidatesQueuePage.css'
 
 type Filter = 'new' | 'all' | 'processed'
@@ -20,10 +20,18 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'processed', label: 'Обработанные' },
 ]
 
-const PROCESSED: ApplicationStatus[] = ['invited', 'rejected', 'mutual_interest', 'interview_scheduled', 'interview_completed']
+const PROCESSED: ApplicationStatus[] = [
+  'reserved',
+  'invited',
+  'rejected',
+  'mutual_interest',
+  'interview_scheduled',
+  'interview_completed',
+]
 
 const STATUS_BADGES: Partial<Record<ApplicationStatus, string>> = {
   passed: 'Новый',
+  reserved: 'В резерве',
   invited: 'Приглашен',
   rejected: 'Отклонен',
   mutual_interest: 'Взаимный интерес',
@@ -39,7 +47,13 @@ export function CandidatesQueuePage() {
   const vacancyId = Number(useParams().vacancyId)
   const navigate = useNavigate()
   const flash = (useLocation().state as { flash?: string } | null)?.flash
-  const { state, reload } = useAsync((signal) => getVacancyCandidates(vacancyId, signal), [vacancyId])
+  const { state, reload } = useAsync(async (signal) => {
+    const [vacancy, candidates] = await Promise.all([
+      getVacancy(vacancyId, signal),
+      getVacancyCandidates(vacancyId, signal),
+    ])
+    return { vacancy, items: candidates.items }
+  }, [vacancyId])
   const [filter, setFilter] = useState<Filter>('new')
   const [activeIndex, setActiveIndex] = useState(0)
   const trackRef = useRef<HTMLDivElement>(null)
@@ -103,7 +117,12 @@ export function CandidatesQueuePage() {
         <>
           <div className="queuePage__track" ref={trackRef} onScroll={handleScroll}>
             {visible.map((candidate) => (
-              <CandidateCard key={candidate.application_id} candidate={candidate} />
+              <CandidateCard
+                key={candidate.application_id}
+                candidate={candidate}
+                label={candidateLabel(items, candidate.application_id)}
+                vacancyId={vacancyId}
+              />
             ))}
           </div>
 
@@ -128,10 +147,18 @@ export function CandidatesQueuePage() {
   )
 }
 
-function CandidateCard({ candidate }: { candidate: EmployerCandidate }) {
+function CandidateCard({
+  candidate,
+  label,
+  vacancyId,
+}: {
+  candidate: EmployerCandidate
+  label: string
+  vacancyId: number
+}) {
   const required = candidate.hard_filters.filter((item) => item.required)
   const passed = required.filter((item) => item.passed === true).length
-  const cardPath = routes.employerApplication(candidate.application_id)
+  const cardPath = routes.employerApplication(vacancyId, candidate.application_id)
 
   return (
     <article className="queueCard">
@@ -146,7 +173,7 @@ function CandidateCard({ candidate }: { candidate: EmployerCandidate }) {
       </div>
 
       <div className="queueCard__body">
-        <h2 className="queueCard__name">{candidateLabel(candidate.application_id)}</h2>
+        <h2 className="queueCard__name">{label}</h2>
         <span className="queueCard__match">
           <span className="queueCard__matchIcon">
             <CheckIcon size={14} strokeWidth={3} />
@@ -169,7 +196,7 @@ function CandidateCard({ candidate }: { candidate: EmployerCandidate }) {
           </li>
         </ul>
 
-        <Link to={cardPath} className="queueCard__open" aria-label={`Открыть карточку: ${candidateLabel(candidate.application_id)}`}>
+        <Link to={cardPath} className="queueCard__open" aria-label={`Открыть карточку: ${label}`}>
           <ArrowRightIcon size={26} strokeWidth={2.4} />
         </Link>
       </div>

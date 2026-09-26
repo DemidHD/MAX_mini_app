@@ -1,12 +1,33 @@
 import { Panel } from '@maxhub/max-ui'
-import { Outlet } from 'react-router-dom'
+import { Outlet, ScrollRestoration } from 'react-router-dom'
+
+import { useAuth } from '@/auth/useAuth'
+import { MaxBridgeUnavailableError } from '@/bridge/maxBridge'
+import { ErrorScreen } from '@/components/ErrorScreen'
+import { SplashScreen } from '@/components/SplashScreen'
 
 /**
- * Общий каркас Mini App. Дизайн экранов ещё не утверждён (см. задачу),
- * поэтому layout ограничивается тем, что нужно для работы на мобильном
- * экране внутри MAX: фон темы и ограничение ширины контента.
+ * Общий каркас Mini App: фон темы, ширина контента и общий шлюз авторизации.
+ *
+ * Экраны монтируются только после успешного `POST /auth/max` (раздел 7):
+ * иначе при открытии по прямой ссылке (например, из уведомления бота) их
+ * запросы уходили бы раньше, чем появится серверная сессия, и падали с 401.
+ * Пока идёт вход — G01, при ошибке — G03 с повтором (UX-карта).
  */
 export function AppLayout() {
+  const { state, refresh } = useAuth()
+
+  let content
+  if (state.status === 'loading') {
+    content = <SplashScreen />
+  } else if (state.status === 'error') {
+    content = (
+      <ErrorScreen error={state.error} description={authErrorText(state.error)} onRetry={() => void refresh()} />
+    )
+  } else {
+    content = <Outlet />
+  }
+
   return (
     <Panel mode="secondary" style={{ minHeight: '100vh' }}>
       {/*
@@ -15,9 +36,19 @@ export function AppLayout() {
        * блок сжимается до ширины контента вместо 100%. Центрируем через
        * alignSelf, а ширину задаём явно и ограничиваем maxWidth.
        */}
-      <div style={{ width: '100%', maxWidth: 480, alignSelf: 'center', minHeight: '100vh' }}>
-        <Outlet />
-      </div>
+      <div style={{ width: '100%', maxWidth: 480, alignSelf: 'center', minHeight: '100vh' }}>{content}</div>
+      {/* Новый экран открывается с начала, «назад» возвращает прежнюю прокрутку. */}
+      <ScrollRestoration />
     </Panel>
   )
+}
+
+/**
+ * Текст G03 без технического жаргона. Mini App, открытый вне MAX, — частый
+ * случай для обычной https-ссылки; подсказку для разработчика показываем
+ * только в dev-сборке.
+ */
+function authErrorText(error: Error): string | undefined {
+  if (!(error instanceof MaxBridgeUnavailableError)) return undefined
+  return import.meta.env.DEV ? error.message : 'Откройте MAX Найм в приложении MAX и попробуйте еще раз'
 }
