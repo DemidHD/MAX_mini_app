@@ -23,6 +23,7 @@ FROM nginx:1.27-alpine
 RUN apk add --no-cache openssl
 
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
+COPY nginx/app-locations.conf /etc/nginx/app-locations.conf
 COPY nginx/docker-entrypoint.d/10-ensure-tls-cert.sh /docker-entrypoint.d/10-ensure-tls-cert.sh
 # Срезаем CR на случай checkout на Windows с CRLF (см. .gitattributes).
 RUN sed -i 's/\r$//' /docker-entrypoint.d/10-ensure-tls-cert.sh \

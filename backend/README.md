@@ -35,12 +35,34 @@ FastAPI + Tortoise ORM + PostgreSQL + `maxapi`. Обслуживает и Mini A
 
 ```bash
 cp .env.example .env   # заполнить секреты
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
 Контейнер backend сам применяет миграции (`aerich upgrade`) и запускает
 uvicorn на `http://localhost:8000`. Проверка живости — `GET /health`,
 интерактивная документация — `/docs`.
+
+Чтобы не писать оба `-f`, пропиши в `.env` строку `COMPOSE_FILE` из
+`.env.example` (на Windows разделитель `;`) — тогда хватает `docker compose up`.
+
+Без `docker-compose.dev.yml` поднимается production-вариант: только nginx
+наружу (порт `HTTP_PORT`, по умолчанию `8080`), без reload и без портов
+backend/БД.
+
+## Деплой на Timeweb Cloud App Platform
+
+Платформа собирает стек из корневого `docker-compose.yml` (dev-файл не
+используется). Его ограничения уже учтены в манифесте: nginx — первый сервис
+(на него проксируется домен), хост-порты 80/443 не заняты, bind mounts нет,
+TLS терминирует платформа.
+
+Файла `.env` на сервере нет — переменные задаются в панели приложения и
+подставляются в манифест через `${VAR}`. Минимум: `APP_URL` (домен
+приложения), `POSTGRES_PASSWORD` (без символов `@ : / ? # %` — он
+подставляется в URL базы), `SESSION_SECRET`, `MAX_BOT_TOKEN`,
+`MAX_WEBHOOK_SECRET`, `MAX_BOT_USERNAME`; для ИИ — ключи GigaChat/YandexGPT.
+Полный список, который пробрасывается в backend, — в `environment` сервиса
+`backend` в `docker-compose.yml`.
 
 ## Локальный запуск без Docker
 
