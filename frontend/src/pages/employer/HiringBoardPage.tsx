@@ -8,6 +8,7 @@ import type { ApplicationStatus, EmployerCandidate, Interview, Vacancy } from '@
 import artCalendar from '@/assets/art-calendar.webp'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { LoadingScreen } from '@/components/LoadingScreen'
+import { OptionSheet } from '@/components/OptionSheet'
 import {
   CalendarIcon,
   ChatIcon,
@@ -19,9 +20,9 @@ import {
   SearchIcon,
 } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
+import { vacancyOptions } from '@/lib/vacancyOptions'
 import { candidateThumbnail } from '@/lib/candidatePhotos'
 import { dayKey, formatDayMonth, formatExperience, formatTime } from '@/lib/format'
-import '@/pages/candidate/ProfileFieldSheet.css'
 import './HiringBoardPage.css'
 
 type ColumnId = 'new' | 'mutual' | 'interview' | 'decision'
@@ -239,8 +240,9 @@ export function HiringBoardPage() {
       )}
 
       {picker ? (
-        <VacancyPicker
-          vacancies={vacancies}
+        <OptionSheet
+          title="Вакансия"
+          options={vacancyOptions(vacancies)}
           selectedId={vacancy.id}
           onSelect={selectVacancy}
           onClose={() => setPicker(false)}
@@ -337,46 +339,6 @@ function BoardCard({
         )}
       </div>
     </article>
-  )
-}
-
-function VacancyPicker({
-  vacancies,
-  selectedId,
-  onSelect,
-  onClose,
-}: {
-  vacancies: Vacancy[]
-  selectedId: number
-  onSelect: (id: number) => void
-  onClose: () => void
-}) {
-  return (
-    <div className="fieldSheet p1Sheet" role="dialog" aria-modal="true" aria-label="Вакансия">
-      <button type="button" className="fieldSheet__backdrop" aria-label="Закрыть" onClick={onClose} />
-      <div className="fieldSheet__panel">
-        <span className="fieldSheet__handle" aria-hidden="true" />
-        <div className="fieldSheet__head">
-          <h2 className="fieldSheet__title">Вакансия</h2>
-          <button type="button" className="fieldSheet__close" aria-label="Закрыть" onClick={onClose}>
-            <CloseIcon size={18} />
-          </button>
-        </div>
-        <div className="fieldSheet__options">
-          {vacancies.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`fieldSheet__option${item.id === selectedId ? ' fieldSheet__option--active' : ''}`}
-              onClick={() => onSelect(item.id)}
-            >
-              {item.title}
-              {item.status === 'closed' ? ' · закрыта' : ''}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
   )
 }
 

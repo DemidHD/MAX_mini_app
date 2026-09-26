@@ -4,6 +4,18 @@
   padding-bottom: 12px;
 }
 
+.queuePage__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.queuePage__tools {
+  display: flex;
+  gap: 8px;
+}
+
 .queuePage__eyebrow {
   margin-top: 16px;
   margin-bottom: 2px;

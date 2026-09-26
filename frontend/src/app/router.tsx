@@ -22,17 +22,21 @@ import { ApplicationStatusPage } from '@/pages/candidate/ApplicationStatusPage'
 import { CandidateProfilePage } from '@/pages/candidate/CandidateProfilePage'
 import { InterviewScheduledPage } from '@/pages/candidate/InterviewScheduledPage'
 import { MatchPage } from '@/pages/candidate/MatchPage'
+import { ResumeImportPage } from '@/pages/candidate/ResumeImportPage'
 import { ScreeningPage } from '@/pages/candidate/ScreeningPage'
 import { ScreeningStartPage } from '@/pages/candidate/ScreeningStartPage'
 import { SlotPickerPage } from '@/pages/candidate/SlotPickerPage'
 import { VacancyDetailsPage } from '@/pages/candidate/VacancyDetailsPage'
 import { VacancyFeedPage } from '@/pages/candidate/VacancyFeedPage'
+import { AnalyticsPage } from '@/pages/employer/AnalyticsPage'
+import { CalibrationPage } from '@/pages/employer/CalibrationPage'
 import { CandidateCardPage } from '@/pages/employer/CandidateCardPage'
 import { CandidatesQueuePage } from '@/pages/employer/CandidatesQueuePage'
 import { HiringBoardPage } from '@/pages/employer/HiringBoardPage'
 import { InterviewDetailsPage } from '@/pages/employer/InterviewDetailsPage'
 import { InterviewSlotsPage } from '@/pages/employer/InterviewSlotsPage'
 import { InviteConfirmPage } from '@/pages/employer/InviteConfirmPage'
+import { ReferralPage } from '@/pages/employer/ReferralPage'
 import { RejectReasonPage } from '@/pages/employer/RejectReasonPage'
 import { ReservePage } from '@/pages/employer/ReservePage'
 import { VacanciesPage } from '@/pages/employer/VacanciesPage'
@@ -51,6 +55,8 @@ export const router = createBrowserRouter([
 
       // Кандидат: C01 и полноэкранные шаги отклика — без нижнего меню.
       { path: routes.candidateProfileSetup, element: <CandidateProfilePage /> },
+      // P2: импорт резюме (C11) — полноэкранный шаг перед C01.
+      { path: routes.candidateResumeImport, element: <ResumeImportPage /> },
       {
         element: <CandidateLayout />,
         children: [
@@ -77,6 +83,8 @@ export const router = createBrowserRouter([
           // P1: доска найма (E15) и резерв (E16).
           { path: routes.employerCandidates, element: <HiringBoardPage /> },
           { path: routes.employerReserve, element: <ReservePage /> },
+          // P2: аналитика работодателя (E18) — раздел кабинета.
+          { path: routes.employerAnalytics, element: <AnalyticsPage /> },
         ],
       },
       {
@@ -100,6 +108,9 @@ export const router = createBrowserRouter([
       { path: routes.employerApplicationInvite(), element: <InviteConfirmPage /> },
       { path: routes.employerApplicationReject(), element: <RejectReasonPage /> },
       { path: routes.employerInterview(), element: <InterviewDetailsPage /> },
+      // P2: калибровка (E17) и реферальная ссылка (R01) — полноэкранные.
+      { path: routes.employerVacancyCalibration(), element: <CalibrationPage /> },
+      { path: routes.employerVacancyReferral(), element: <ReferralPage /> },
 
       { path: '*', element: <NotFoundPage /> },
     ],

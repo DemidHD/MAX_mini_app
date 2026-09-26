@@ -1,0 +1,283 @@
+/*
+ * E18 «Аналитика работодателя» (P2). Раздел кабинета под нижним меню:
+ * выбор вакансии, время до первого интервью, три счетчика и воронка.
+ * Размеры сняты с макета 390×844.
+ */
+
+.analytics {
+  min-height: auto;
+  padding: 20px 16.5px 24px;
+  background: #fdfdfd;
+}
+
+.analytics__vacancy {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0;
+  max-width: 100%;
+  height: 35.2px;
+  margin-left: 2.7px;
+  padding: 0 13px 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: #ecf2fd;
+  color: var(--p1-ink);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+}
+
+.analytics__vacancy:disabled {
+  cursor: default;
+}
+
+.analytics__vacancyIcon {
+  display: flex;
+  margin-right: 14.6px;
+  color: var(--p1-blue);
+}
+
+.analytics__vacancyTitle {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.analytics__vacancyChevron {
+  display: flex;
+  flex-shrink: 0;
+  margin-left: 13.5px;
+}
+
+.analytics__heading {
+  position: relative;
+}
+
+.analytics__title {
+  margin-top: 17.1px;
+  padding-left: 7.3px;
+  font-size: 48px;
+  font-weight: 900;
+  line-height: 40.6px;
+  letter-spacing: -0.064em;
+}
+
+.analytics__period {
+  position: absolute;
+  right: 1.3px;
+  bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36.5px;
+  padding: 0 11px 0 12.5px;
+  border: none;
+  border-radius: 999px;
+  background: #ecf2fc;
+  color: var(--p1-ink);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------- герой */
+
+.analytics__hero {
+  position: relative;
+  min-height: 181.5px;
+  margin-top: 16.9px;
+  padding: 20px 20.1px 16.7px;
+  border-radius: 20px;
+  background: #0069fd;
+  box-shadow: 0 16px 32px rgba(0, 105, 253, 0.2);
+  color: #fff;
+  overflow: hidden;
+}
+
+.analytics__heroLabel {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 18px;
+  letter-spacing: -0.01em;
+}
+
+.analytics__heroValue {
+  position: relative;
+  z-index: 1;
+  margin: 5.5px 0 0;
+  font-size: 80px;
+  font-weight: 800;
+  line-height: 80px;
+  letter-spacing: -0.055em;
+  white-space: nowrap;
+}
+
+.analytics__heroValue--medium {
+  font-size: 60px;
+}
+
+.analytics__heroValue--small {
+  font-size: 50px;
+}
+
+.analytics__heroNote {
+  position: relative;
+  z-index: 1;
+  margin: 9.2px 0 0;
+  font-size: 12.5px;
+  line-height: 16px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.analytics__heroBadge {
+  position: absolute;
+  top: 40.7px;
+  right: 12.7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.085);
+}
+
+/* ------------------------------------------------------------ счетчики */
+
+.analytics__tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8.2px;
+  margin: 11.9px 0.4px 0;
+}
+
+.analytics__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 150.9px;
+  padding: 12.4px 8px 10.5px 12.8px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--p1-card-shadow);
+}
+
+.analytics__tileIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40.3px;
+  height: 40.3px;
+  border-radius: 50%;
+  background: #e9f0fd;
+  color: var(--p1-blue);
+}
+
+.analytics__tileValue {
+  margin: 5.8px 0 0 1.8px;
+  font-size: 50px;
+  font-weight: 800;
+  line-height: 50px;
+  letter-spacing: -0.045em;
+}
+
+.analytics__tileLabel {
+  margin: 3.9px 0 0 1.8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 14px;
+  color: #3d4a70;
+}
+
+/* ------------------------------------------------------------- воронка */
+
+.analytics__funnelTitle {
+  margin: 24.8px 0 0 3.2px;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 26px;
+  letter-spacing: -0.03em;
+}
+
+.analytics__funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 5.9px;
+  margin: 8.3px 0 0 2.2px;
+  padding: 0;
+  list-style: none;
+}
+
+.analytics__stage {
+  display: flex;
+  align-items: center;
+  gap: 5.5px;
+  min-width: max-content;
+  max-width: 100%;
+  height: 38.4px;
+  padding: 0 16px 0 17.9px;
+  border-radius: 999px;
+  color: #fff;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: transform 0.1s ease, filter 0.15s ease;
+}
+
+.analytics__stage:active {
+  transform: scale(0.99);
+  filter: brightness(0.97);
+}
+
+.analytics__stage--1 {
+  background: #016efe;
+}
+
+.analytics__stage--2 {
+  background: #56a4fd;
+}
+
+.analytics__stage--3 {
+  background: #cbe0fd;
+  color: #546997;
+}
+
+.analytics__stage--4 {
+  background: #e4eefd;
+  color: #546997;
+}
+
+.analytics__stageValue {
+  font-size: 19.5px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.analytics__stage--3 .analytics__stageValue,
+.analytics__stage--4 .analytics__stageValue {
+  color: var(--p1-ink);
+}
+
+.analytics__stageDot {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.analytics__stageLabel {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.analytics__caption {
+  margin: 14.1px 0 0;
+  text-align: center;
+  font-size: 10px;
+  line-height: 14px;
+  color: #999fc1;
+}

@@ -12,6 +12,8 @@ export const routes = {
   profile: '/profile',
   authError: '/error',
   candidateProfileSetup: '/candidate/profile-setup',
+  // P2: импорт резюме (C11) — черновик полей, подтверждение ведёт в C01.
+  candidateResumeImport: '/candidate/profile-setup/resume',
   candidateFeed: '/candidate/feed',
   candidateApplications: '/candidate/applications',
   candidateVacancy: (vacancyId: Id = ':vacancyId') => `/candidate/vacancies/${vacancyId}`,
@@ -52,6 +54,11 @@ export const routes = {
     `/employer/candidates/${vacancyId}/${applicationId}/invite`,
   employerApplicationReject: (vacancyId: Id = ':vacancyId', applicationId: Id = ':applicationId') =>
     `/employer/candidates/${vacancyId}/${applicationId}/reject`,
+  // P2: калибровка (E17), реферальная ссылка (R01) и аналитика (E18);
+  // вакансия аналитики выбирается параметром `?vacancy=`, как на доске найма.
+  employerVacancyCalibration: (vacancyId: Id = ':vacancyId') => `/employer/vacancies/${vacancyId}/calibration`,
+  employerVacancyReferral: (vacancyId: Id = ':vacancyId') => `/employer/vacancies/${vacancyId}/referral`,
+  employerAnalytics: '/employer/analytics',
   employerInterview: (vacancyId: Id = ':vacancyId', interviewId: Id = ':interviewId') =>
     `/employer/vacancies/${vacancyId}/interviews/${interviewId}`,
 } as const

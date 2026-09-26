@@ -112,9 +112,14 @@ export function VacanciesPage() {
       )}
 
       {published > 0 ? (
-        <Link to={routes.employerCandidates} className="p1Link vacanciesPage__board">
-          Открыть доску найма
-        </Link>
+        <>
+          <Link to={routes.employerCandidates} className="p1Link vacanciesPage__board">
+            Открыть доску найма
+          </Link>
+          <Link to={routes.employerAnalytics} className="p1Link">
+            Аналитика найма
+          </Link>
+        </>
       ) : null}
 
       {dialog?.kind === 'limit' ? <DraftLimitDialog limit={DRAFT_LIMIT} onClose={() => setDialog(null)} /> : null}

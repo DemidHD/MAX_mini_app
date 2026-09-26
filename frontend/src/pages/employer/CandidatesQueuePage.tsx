@@ -7,7 +7,18 @@ import type { ApplicationStatus, EmployerCandidate } from '@/api/hiring'
 import { BackButton } from '@/components/BackButton'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { LoadingScreen } from '@/components/LoadingScreen'
-import { ArrowRightIcon, BriefcaseIcon, CalendarIcon, CheckIcon, MoreIcon, RubleIcon, SortIcon } from '@/components/icons'
+import {
+  ArrowRightIcon,
+  BriefcaseIcon,
+  CalendarIcon,
+  ChartIcon,
+  CheckIcon,
+  MoreIcon,
+  RubleIcon,
+  ShareIcon,
+  SlidersIcon,
+  SortIcon,
+} from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
 import { formatAvailableFrom, formatExperience, formatMoney, plural } from '@/lib/format'
 import './CandidatesQueuePage.css'
@@ -78,7 +89,23 @@ export function CandidatesQueuePage() {
 
   return (
     <div className="screen queuePage">
-      <BackButton onClick={() => navigate(routes.employerHome)} />
+      <div className="queuePage__top">
+        <BackButton onClick={() => navigate(routes.employerHome)} />
+        {/* P2: калибровка (E17), аналитика (E18) и реферальная ссылка (R01) этой вакансии. */}
+        <div className="queuePage__tools">
+          <Link to={routes.employerVacancyCalibration(vacancyId)} className="backButton" aria-label="Калибровка подбора">
+            <SlidersIcon size={21} strokeWidth={1.9} />
+          </Link>
+          <Link to={`${routes.employerAnalytics}?vacancy=${vacancyId}`} className="backButton" aria-label="Аналитика вакансии">
+            <ChartIcon size={21} strokeWidth={2} />
+          </Link>
+          {vacancy.status === 'published' ? (
+            <Link to={routes.employerVacancyReferral(vacancyId)} className="backButton" aria-label="Порекомендовать знакомому">
+              <ShareIcon size={21} strokeWidth={1.9} />
+            </Link>
+          ) : null}
+        </div>
+      </div>
 
       <span className="screen__eyebrow queuePage__eyebrow">{vacancy.title}</span>
       <div className="queuePage__heading">
