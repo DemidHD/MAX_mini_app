@@ -63,7 +63,9 @@ services:
 
   nginx:
     build:
-      context: ./nginx
+      # Корень репозитория: образ собирает frontend (multi-stage, nginx/Dockerfile)
+      context: .
+      dockerfile: nginx/Dockerfile
     container_name: max_hiring_nginx
     restart: unless-stopped
     ports:
@@ -74,8 +76,6 @@ services:
       # хосте (см. nginx/README.md). Пусто — контейнер сам сгенерирует
       # самоподписанный при старте, поэтому не `:ro`.
       - ./nginx/certs:/etc/nginx/certs
-      # Собранный frontend (`npm run build` в frontend/ — см. nginx/README.md)
-      - ./frontend/dist:/usr/share/nginx/html:ro
     depends_on:
       backend:
         condition: service_started

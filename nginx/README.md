@@ -34,12 +34,16 @@ nginx/certs/privkey.pem
 
 ## Frontend
 
-Nginx отдаёт статику из `frontend/dist` (volume, `:ro`). Собери её один раз
-перед первым запуском:
+Frontend собирается внутри образа nginx (multi-stage `nginx/Dockerfile`:
+`npm ci && npm run build` на `node:22-alpine`, затем `dist` копируется в
+`/usr/share/nginx/html`). Контекст сборки — корень репозитория, что в него
+попадает, задаёт корневой `.dockerignore` (в частности, `frontend/.env.local`
+и `node_modules` туда не попадают).
+
+Первый запуск и пересборка после изменений frontend:
 
 ```bash
-cd frontend && npm install && npm run build
+docker compose up -d --build nginx
 ```
 
-Каталог пуст — nginx поднимется и API продолжит работать, просто раздел `/`
-будет пустым, пока сборка не появится.
+Node на хосте для этого не нужен.
