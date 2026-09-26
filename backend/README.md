@@ -64,6 +64,11 @@ TLS терминирует платформа.
 Полный список, который пробрасывается в backend, — в `environment` сервиса
 `backend` в `docker-compose.yml`.
 
+Если сборка падает на `npm ci` с `npm error network` — сборочная машина не
+достаёт до `registry.npmjs.org`. Задай в панели `NPM_REGISTRY` с адресом
+зеркала, например `https://registry.npmmirror.com/`: это аргумент сборки
+образа nginx, целостность пакетов по-прежнему сверяется с `package-lock.json`.
+
 ## Локальный запуск без Docker
 
 Нужны Python 3.12 и запущенный PostgreSQL.

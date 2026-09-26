@@ -16,6 +16,9 @@ services:
       # Корень репозитория: образ собирает frontend (multi-stage, nginx/Dockerfile)
       context: .
       dockerfile: nginx/Dockerfile
+      args:
+        # Зеркало npm, если сборочная машина не достаёт до registry.npmjs.org
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     container_name: max_hiring_nginx
     restart: unless-stopped
     ports:

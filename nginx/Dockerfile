@@ -7,10 +7,22 @@ FROM node:22-alpine AS frontend
 
 WORKDIR /frontend
 
+# Реестр npm. Со сборочных машин (например, Timeweb App Platform) доступ к
+# registry.npmjs.org бывает нестабильным — тогда в панели/окружении задаётся
+# зеркало (NPM_REGISTRY=https://registry.npmmirror.com/). Хосты из
+# package-lock.json npm подменяет на этот реестр сам, а целостность пакетов
+# всё равно сверяется по sha512 из lock-файла.
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+
 # Сначала только манифесты — слой с зависимостями кэшируется, пока они не
-# меняются.
+# меняются. Повторы и увеличенные таймауты — на случай обрывов сети.
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm config set registry "$NPM_REGISTRY" \
+    && npm config set fetch-retries 5 \
+    && npm config set fetch-retry-mintimeout 20000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm config set fetch-timeout 600000 \
+    && npm ci --no-audit --no-fund --no-update-notifier
 
 COPY frontend/ ./
 RUN npm run build
