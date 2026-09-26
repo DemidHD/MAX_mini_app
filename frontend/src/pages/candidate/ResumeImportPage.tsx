@@ -4,13 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
 import { ApiError } from '@/api/client'
-import {
-  RESUME_ACCEPT,
-  RESUME_MAX_SIZE_BYTES,
-  isProfileMissingError,
-  parseResume,
-  uploadResume,
-} from '@/api/p2'
+import { RESUME_ACCEPT, RESUME_MAX_SIZE_BYTES, parseResumeDraft } from '@/api/p2'
 import type { ResumeParsedDraft } from '@/api/p2'
 import { BackButton } from '@/components/BackButton'
 import {
@@ -27,11 +21,9 @@ import './ResumeImportPage.css'
 
 type Phase =
   | { kind: 'idle' }
-  | { kind: 'uploading'; fileName: string }
   | { kind: 'parsing'; fileName: string }
   | { kind: 'parsed'; fileName: string; draft: ResumeParsedDraft }
   | { kind: 'unparsed'; fileName: string }
-  | { kind: 'profileMissing' }
 
 interface DraftRow {
   key: keyof ResumeParsedDraft
@@ -60,9 +52,9 @@ function draftRows(draft: ResumeParsedDraft): DraftRow[] {
 
 /**
  * C11 «Импорт резюме» (P2, функция 29 UX-карты): PDF/DOCX → предложенные
- * поля профиля → обязательное подтверждение кандидатом. Файл загружается
- * (`PATCH /candidate/resume`) и разбирается (`POST /candidate/resume/parse`),
- * но черновик никогда не сохраняется как истина: «Подтвердить» переносит его
+ * поля профиля → обязательное подтверждение кандидатом. Файл разбирается
+ * `POST /candidate/resume/draft` — так импорт работает и до создания профиля;
+ * черновик никогда не сохраняется как истина: «Подтвердить» переносит его
  * в форму профиля C01, где кандидат проверяет поля и сохраняет их сам.
  * Файл не обязателен — «Заполнить вручную» ведёт в ту же форму без черновика.
  */
@@ -72,7 +64,7 @@ export function ResumeImportPage() {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   const [error, setError] = useState<string | null>(null)
 
-  const busy = phase.kind === 'uploading' || phase.kind === 'parsing'
+  const busy = phase.kind === 'parsing'
   const rows = phase.kind === 'parsed' ? draftRows(phase.draft) : []
   const partial = phase.kind === 'parsed' && (!phase.draft.desired_role || rows.length < 3)
 
@@ -88,11 +80,9 @@ export function ResumeImportPage() {
       return
     }
     setError(null)
-    setPhase({ kind: 'uploading', fileName: file.name })
+    setPhase({ kind: 'parsing', fileName: file.name })
     try {
-      await uploadResume(file)
-      setPhase({ kind: 'parsing', fileName: file.name })
-      const result = await parseResume()
+      const result = await parseResumeDraft(file)
       const found = draftRows(result.parsed).length > 0
       setPhase(
         result.ai_available && found
@@ -100,10 +90,6 @@ export function ResumeImportPage() {
           : { kind: 'unparsed', fileName: file.name },
       )
     } catch (cause) {
-      if (isProfileMissingError(cause)) {
-        setPhase({ kind: 'profileMissing' })
-        return
-      }
       setPhase({ kind: 'idle' })
       setError(uploadErrorText(cause))
     }
@@ -114,7 +100,7 @@ export function ResumeImportPage() {
     navigate(routes.candidateProfileSetup, { state: { resumeDraft: phase.draft } })
   }
 
-  const hasResult = phase.kind === 'parsed' || phase.kind === 'unparsed' || phase.kind === 'profileMissing'
+  const hasResult = phase.kind === 'parsed' || phase.kind === 'unparsed'
 
   return (
     <div className="p1Screen resumeImport">
@@ -139,11 +125,7 @@ export function ResumeImportPage() {
           disabled={busy}
           onClick={() => inputRef.current?.click()}
         >
-          {phase.kind === 'uploading'
-            ? 'Загружаем…'
-            : phase.kind === 'parsing'
-              ? 'Разбираем резюме…'
-              : 'Выбрать файл'}
+          {busy ? 'Разбираем резюме…' : 'Выбрать файл'}
         </button>
         <input
           ref={inputRef}
@@ -180,20 +162,16 @@ export function ResumeImportPage() {
         </section>
       ) : null}
 
-      {phase.kind === 'unparsed' || phase.kind === 'profileMissing' ? (
+      {phase.kind === 'unparsed' ? (
         <section className="resumeImport__result resumeImport__result--message" aria-live="polite">
           <div className="resumeImport__resultHead">
-            <span className="resumeImport__badge resumeImport__badge--error">
-              {phase.kind === 'unparsed' ? 'Не распознано' : 'Нужен профиль'}
-            </span>
+            <span className="resumeImport__badge resumeImport__badge--error">Не распознано</span>
             <span className="resumeImport__resultIcon" aria-hidden="true">
               <DocCheckIcon size={22} strokeWidth={1.7} />
             </span>
           </div>
           <p className="resumeImport__message">
-            {phase.kind === 'unparsed'
-              ? 'Не удалось извлечь данные из файла. Резюме сохранено — заполните профиль вручную.'
-              : 'Резюме прикрепляется к профилю. Сначала заполните и сохраните профиль, затем загрузите файл.'}
+            Не удалось извлечь данные из файла. Заполните профиль вручную — это займет пару минут.
           </p>
         </section>
       ) : null}

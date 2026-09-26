@@ -19,6 +19,8 @@ export const routes = {
   candidateVacancy: (vacancyId: Id = ':vacancyId') => `/candidate/vacancies/${vacancyId}`,
   /** Публичная ссылка на вакансию `{APP_URL}/v/{token}` (раздел 15 тех-доки). */
   vacancyPublic: (token: Id = ':token') => `/v/${token}`,
+  /** Реферальная ссылка R01 (P2) — «Общее»: доступна кандидату и работодателю. */
+  vacancyReferral: (vacancyId: Id = ':vacancyId') => `/vacancies/${vacancyId}/referral`,
   candidateApplication: (applicationId: Id = ':applicationId') => `/candidate/applications/${applicationId}`,
   candidateScreeningStart: (applicationId: Id = ':applicationId') =>
     `/candidate/applications/${applicationId}/start`,
@@ -54,10 +56,9 @@ export const routes = {
     `/employer/candidates/${vacancyId}/${applicationId}/invite`,
   employerApplicationReject: (vacancyId: Id = ':vacancyId', applicationId: Id = ':applicationId') =>
     `/employer/candidates/${vacancyId}/${applicationId}/reject`,
-  // P2: калибровка (E17), реферальная ссылка (R01) и аналитика (E18);
+  // P2: калибровка (E17) и аналитика (E18);
   // вакансия аналитики выбирается параметром `?vacancy=`, как на доске найма.
   employerVacancyCalibration: (vacancyId: Id = ':vacancyId') => `/employer/vacancies/${vacancyId}/calibration`,
-  employerVacancyReferral: (vacancyId: Id = ':vacancyId') => `/employer/vacancies/${vacancyId}/referral`,
   employerAnalytics: '/employer/analytics',
   employerInterview: (vacancyId: Id = ':vacancyId', interviewId: Id = ':interviewId') =>
     `/employer/vacancies/${vacancyId}/interviews/${interviewId}`,

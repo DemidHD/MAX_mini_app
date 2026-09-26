@@ -93,7 +93,7 @@ function ProfileForm() {
 
   return (
     <div className="p1Screen profilePage">
-      <span className="profilePage__eyebrow">MAX Найм</span>
+      <span className="profilePage__eyebrow">МЭТЧ</span>
       <h1 className="p1Title profilePage__title">Профиль</h1>
 
       <section className="profileHero">

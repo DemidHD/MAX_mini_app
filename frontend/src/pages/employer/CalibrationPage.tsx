@@ -174,7 +174,9 @@ function Calibration({ vacancyId, profiles }: { vacancyId: number; profiles: Cal
           <div className="calibration__main">
             <article
               key={profile.pattern_token + index}
-              className={`calibrationCard${dragX !== 0 && !leaving ? ' calibrationCard--dragging' : ''}`}
+              className={`calibrationCard${profile.criteria.length > 3 ? ' calibrationCard--dense' : ''}${
+                dragX !== 0 && !leaving ? ' calibrationCard--dragging' : ''
+              }`}
               style={cardMotion ? { transform: cardMotion } : undefined}
               aria-label={`Тестовый профиль: кандидат ${LETTERS[index] ?? index + 1}`}
               onPointerDown={onPointerDown}

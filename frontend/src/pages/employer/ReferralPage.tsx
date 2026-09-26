@@ -70,7 +70,7 @@ export function ReferralPage() {
     if (!link) return
     if (navigator.share) {
       try {
-        await navigator.share({ title: vacancy.title, text: `Вакансия «${vacancy.title}» в MAX Найм`, url: link.url })
+        await navigator.share({ title: vacancy.title, text: `Вакансия «${vacancy.title}» в МЭТЧ`, url: link.url })
       } catch {
         // Пользователь закрыл системное меню — не ошибка.
       }
@@ -95,7 +95,7 @@ export function ReferralPage() {
 
         <section className="referral__card">
           <p className="referral__brand">
-            <b>MAX</b> Найм
+            <b>МЭТЧ</b>
           </p>
           <h2 className={`referral__vacancy${titleSizeClass(vacancy.title)}`}>{vacancy.title}</h2>
           {vacancy.company_name ? <p className="referral__company">{vacancy.company_name}</p> : null}

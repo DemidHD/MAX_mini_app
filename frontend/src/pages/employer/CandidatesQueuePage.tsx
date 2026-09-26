@@ -100,7 +100,7 @@ export function CandidatesQueuePage() {
             <ChartIcon size={21} strokeWidth={2} />
           </Link>
           {vacancy.status === 'published' ? (
-            <Link to={routes.employerVacancyReferral(vacancyId)} className="backButton" aria-label="Порекомендовать знакомому">
+            <Link to={routes.vacancyReferral(vacancyId)} className="backButton" aria-label="Порекомендовать знакомому">
               <ShareIcon size={21} strokeWidth={1.9} />
             </Link>
           ) : null}

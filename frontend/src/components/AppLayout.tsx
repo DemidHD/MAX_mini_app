@@ -50,5 +50,5 @@ export function AppLayout() {
  */
 function authErrorText(error: Error): string | undefined {
   if (!(error instanceof MaxBridgeUnavailableError)) return undefined
-  return import.meta.env.DEV ? error.message : 'Откройте MAX Найм в приложении MAX и попробуйте еще раз'
+  return import.meta.env.DEV ? error.message : 'Откройте МЭТЧ в приложении MAX и попробуйте еще раз'
 }

@@ -17,16 +17,10 @@
   margin-bottom: 20px;
 }
 
-.roleScreen__brandMax {
-  font-size: 20px;
-  font-weight: 800;
-  color: var(--button-primary, #007aff);
-}
-
 .roleScreen__brandName {
   font-size: 20px;
   font-weight: 800;
-  color: #0b0f2e;
+  color: var(--button-primary, #007aff);
 }
 
 .roleScreen__heading {

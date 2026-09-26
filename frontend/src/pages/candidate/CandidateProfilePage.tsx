@@ -123,7 +123,7 @@ function ProfileForm({ initial }: { initial: CandidateProfile }) {
   return (
     <div className="screen profileSetup">
       <p className="screen__logo">
-        <span>MAX</span> Найм
+        <span>МЭТЧ</span>
       </p>
 
       <div className="profileSetup__heading">

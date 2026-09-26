@@ -108,9 +108,9 @@ export const router = createBrowserRouter([
       { path: routes.employerApplicationInvite(), element: <InviteConfirmPage /> },
       { path: routes.employerApplicationReject(), element: <RejectReasonPage /> },
       { path: routes.employerInterview(), element: <InterviewDetailsPage /> },
-      // P2: калибровка (E17) и реферальная ссылка (R01) — полноэкранные.
+      // P2: калибровка (E17) и реферальная ссылка (R01, любая роль) — полноэкранные.
       { path: routes.employerVacancyCalibration(), element: <CalibrationPage /> },
-      { path: routes.employerVacancyReferral(), element: <ReferralPage /> },
+      { path: routes.vacancyReferral(), element: <ReferralPage /> },
 
       { path: '*', element: <NotFoundPage /> },
     ],

@@ -1,4 +1,5 @@
 import { ApiError, api } from '@/api/client'
+import { forgetReferral, readReferral } from '@/lib/referral'
 
 /**
  * Сценарий найма: вакансии, отклики, первичный отбор, решения, слоты,
@@ -245,9 +246,16 @@ export function getVacancy(id: number, signal?: AbortSignal) {
   return api.get<Vacancy>(`/vacancies/${id}`, signal)
 }
 
-/** Повторный вызов возвращает существующий отклик (раздел 57). */
-export function applyToVacancy(vacancyId: number, signal?: AbortSignal) {
-  return api.post<ApplicationSummary>(`/vacancies/${vacancyId}/apply`, undefined, signal)
+/**
+ * Повторный вызов возвращает существующий отклик (раздел 57). Если вакансию
+ * открыли по реферальной ссылке, код уходит в `?ref=` (R01, функция 32).
+ */
+export async function applyToVacancy(vacancyId: number, signal?: AbortSignal) {
+  const ref = readReferral(vacancyId)
+  const query = ref ? `?ref=${encodeURIComponent(ref)}` : ''
+  const application = await api.post<ApplicationSummary>(`/vacancies/${vacancyId}/apply${query}`, undefined, signal)
+  if (ref) forgetReferral(vacancyId)
+  return application
 }
 
 export function getApplication(applicationId: number, signal?: AbortSignal) {

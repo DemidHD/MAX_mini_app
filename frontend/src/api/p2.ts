@@ -1,5 +1,5 @@
 import { ApiError, api } from '@/api/client'
-import type { CandidateProfile, CriterionType } from '@/api/hiring'
+import type { CriterionType } from '@/api/hiring'
 
 /**
  * Функции P2 (раздел 2 тех-доки): импорт резюме (C11), калибровка
@@ -32,23 +32,14 @@ export interface ParseResumeResponse {
 }
 
 /**
- * `PATCH /api/candidate/resume` — загрузить или заменить файл. Backend
- * принимает резюме только к уже сохранённому профилю: без него —
- * `404 candidate_profile_not_found`.
+ * `POST /api/candidate/resume/draft` — черновик полей прямо из файла. Работает
+ * и без сохранённого профиля; ни файл, ни профиль не сохраняются —
+ * подтверждение идёт обычным `PATCH /candidate/profile` из C01.
  */
-export function uploadResume(file: File, signal?: AbortSignal): Promise<CandidateProfile> {
+export function parseResumeDraft(file: File, signal?: AbortSignal): Promise<ParseResumeResponse> {
   const form = new FormData()
   form.append('file', file, file.name)
-  return api.patchForm<CandidateProfile>('/candidate/resume', form, signal)
-}
-
-/** `POST /api/candidate/resume/parse` — черновик полей, профиль не меняет. */
-export function parseResume(signal?: AbortSignal): Promise<ParseResumeResponse> {
-  return api.post<ParseResumeResponse>('/candidate/resume/parse', undefined, signal)
-}
-
-export function isProfileMissingError(cause: unknown): boolean {
-  return cause instanceof ApiError && cause.code === 'candidate_profile_not_found'
+  return api.postForm<ParseResumeResponse>('/candidate/resume/draft', form, signal)
 }
 
 // ------------------------------------------------- калибровка (E17)

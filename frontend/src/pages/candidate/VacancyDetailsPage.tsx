@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { routes } from '@/app/routes'
 import { applyToVacancy, getVacancy } from '@/api/hiring'
@@ -8,7 +8,7 @@ import { CoverImage } from '@/components/CoverImage'
 import { ErrorScreen } from '@/components/ErrorScreen'
 import { LoadingScreen } from '@/components/LoadingScreen'
 import { criterionIcon, criterionLabel, splitCriteria, vacancyFacts } from '@/components/VacancyFacts'
-import { MoreIcon } from '@/components/icons'
+import { ShareIcon } from '@/components/icons'
 import { useAsync } from '@/hooks/useAsync'
 import { formatSalaryRange } from '@/lib/format'
 import { useApply } from '@/pages/candidate/useApply'
@@ -16,7 +16,8 @@ import './VacancyDetailsPage.css'
 
 /**
  * C03 «Детали вакансии»: полные условия и обязательные/желательные требования
- * (`GET /vacancies/:id`). У закрытой вакансии отклик отключён.
+ * (`GET /vacancies/:id`). У закрытой вакансии отклик отключён. Кнопка в
+ * углу — «Порекомендовать знакомому» (R01, P2).
  */
 export function VacancyDetailsPage() {
   const vacancyId = Number(useParams().vacancyId)
@@ -39,9 +40,11 @@ export function VacancyDetailsPage() {
         <CoverImage url={vacancy.image_url} />
         <div className="vacancyDetails__heroTop">
           <BackButton variant="glass" onClick={() => navigate(routes.candidateFeed)} />
-          <span className="vacancyDetails__more" aria-hidden="true">
-            <MoreIcon size={22} />
-          </span>
+          {closed ? null : (
+            <Link to={routes.vacancyReferral(vacancy.id)} className="vacancyDetails__more" aria-label="Порекомендовать знакомому">
+              <ShareIcon size={21} strokeWidth={1.9} />
+            </Link>
+          )}
         </div>
         <div className="vacancyDetails__heroText">
           {vacancy.company_name ? <span className="vacancyDetails__company">{vacancy.company_name}</span> : null}
