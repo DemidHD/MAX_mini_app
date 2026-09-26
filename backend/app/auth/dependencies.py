@@ -50,5 +50,14 @@ async def require_employer(user: CurrentUser) -> User:
     return await require_role(user, UserRole.EMPLOYER)
 
 
+async def require_any_role(user: CurrentUser) -> User:
+    """Кандидат или работодатель — не важно, какая именно, только не гость
+    без роли. Для действий, доступных обеим ролям одинаково (например R01)."""
+    if user.role is None:
+        raise ForbiddenError("Сначала нужно выбрать роль", code="role_not_selected")
+    return user
+
+
 CandidateUser = Annotated[User, Depends(require_candidate)]
 EmployerUser = Annotated[User, Depends(require_employer)]
+AnyRoleUser = Annotated[User, Depends(require_any_role)]

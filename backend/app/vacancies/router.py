@@ -11,7 +11,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Query, status
 
-from app.auth.dependencies import CurrentUser, EmployerUser
+from app.auth.dependencies import AnyRoleUser, CurrentUser, EmployerUser
 from app.vacancies import service
 from app.vacancies.schemas import (
     CalibrationProfilesResponse,
@@ -96,16 +96,20 @@ async def submit_calibration(
     response_model=ReferralLinkRead,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_referral_link(vacancy_id: int, user: EmployerUser) -> ReferralLinkRead:
-    """Создаёт реферальную ссылку на вакансию (R01, функция 32)."""
+async def create_referral_link(vacancy_id: int, user: AnyRoleUser) -> ReferralLinkRead:
+    """Создаёт реферальную ссылку на вакансию (R01, функция 32).
+
+    Доступно любой выбранной роли: UX-карта описывает R01 как «Общее» —
+    рекомендовать вакансию может и работодатель, и кандидат.
+    """
     return await service.create_referral_link(user, vacancy_id)
 
 
 @router.get("/{vacancy_id}/referral", response_model=ReferralLinkListResponse)
 async def list_referral_links(
-    vacancy_id: int, user: EmployerUser
+    vacancy_id: int, user: AnyRoleUser
 ) -> ReferralLinkListResponse:
-    """Уже созданные реферальные ссылки вакансии."""
+    """Уже созданные текущим пользователем реферальные ссылки на вакансию."""
     return await service.list_referral_links(user, vacancy_id)
 
 

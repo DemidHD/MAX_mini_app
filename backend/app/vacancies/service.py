@@ -650,20 +650,37 @@ async def submit_calibration(
     return CalibrationWeightsResponse(weights=weights)
 
 
-async def create_referral_link(user: User, vacancy_id: int) -> ReferralLinkRead:
-    """Реферальная ссылка на вакансию (R01 UX-карты, функция 32, раздел 68
-    тех-доки). Ссылка ведёт на уже существующий публичный маршрут вакансии
-    (раздел 15) с добавленным источником — отдельный маршрут не заводим.
+async def _get_referable_vacancy(user: User, vacancy_id: int) -> Vacancy:
+    """Вакансия, на которую можно оформить реферальную ссылку (R01, функция 32).
 
-    Требует опубликованную вакансию: `public_token` появляется только при
-    публикации, а рекомендовать черновик, который ещё никто не видит, нечем.
+    UX-карта описывает R01 как «Общее»: рекомендовать вакансию может и её
+    работодатель, и кандидат, который её увидел, поэтому владение вакансией
+    здесь не проверяется (в отличие от `get_own_vacancy`).
+
+    Черновик чужого работодателя не раскрывается — `404`, как и в
+    `_visible_vacancy`. Собственный черновик работодателя — `409` с понятным
+    сообщением, что сначала нужно опубликовать вакансию: рекомендовать
+    черновик, который ещё никто не видит, нечем.
     """
-    vacancy = await get_own_vacancy(user, vacancy_id)
-    if vacancy.public_token is None:
+    vacancy = await Vacancy.get_or_none(id=vacancy_id)
+    if vacancy is None:
+        raise NotFoundError("Вакансия не найдена", code="vacancy_not_found")
+    if vacancy.public_token is not None:
+        return vacancy
+    if vacancy.employer_id == user.user_id:
         raise ConflictError(
             "У вакансии ещё нет публичной ссылки — сначала опубликуйте её",
             code="vacancy_not_published",
         )
+    raise NotFoundError("Вакансия не найдена", code="vacancy_not_found")
+
+
+async def create_referral_link(user: User, vacancy_id: int) -> ReferralLinkRead:
+    """Реферальная ссылка на вакансию (R01 UX-карты, функция 32, раздел 68
+    тех-доки). Ссылка ведёт на уже существующий публичный маршрут вакансии
+    (раздел 15) с добавленным источником — отдельный маршрут не заводим.
+    """
+    vacancy = await _get_referable_vacancy(user, vacancy_id)
 
     for _ in range(REFERRAL_CODE_ATTEMPTS):
         code = secrets.token_urlsafe(REFERRAL_CODE_BYTES)
@@ -686,10 +703,18 @@ async def create_referral_link(user: User, vacancy_id: int) -> ReferralLinkRead:
 
 
 async def list_referral_links(user: User, vacancy_id: int) -> ReferralLinkListResponse:
-    """Уже созданные реферальные ссылки вакансии. Не из тех-доки — естественное
-    дополнение к созданию (`POST`), как и списки вакансий/слотов в остальном API."""
-    vacancy = await get_own_vacancy(user, vacancy_id)
-    links = await ReferralLink.filter(vacancy_id=vacancy.id).order_by("-created_at")
+    """Уже созданные текущим пользователем реферальные ссылки на вакансию.
+
+    Не из тех-доки — естественное дополнение к созданию (`POST`), как и
+    списки вакансий/слотов в остальном API. Фильтр по `source_user_id`, а не
+    все ссылки вакансии: с открытием R01 любой роли (см.
+    `_get_referable_vacancy`) список без этого фильтра показывал бы одному
+    кандидату чужие реферальные коды.
+    """
+    vacancy = await _get_referable_vacancy(user, vacancy_id)
+    links = await ReferralLink.filter(
+        vacancy_id=vacancy.id, source_user_id=user.user_id
+    ).order_by("-created_at")
     return ReferralLinkListResponse(
         items=[_referral_read(link, vacancy) for link in links]
     )
