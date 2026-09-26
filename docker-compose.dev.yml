@@ -1,0 +1,42 @@
+# Локальная разработка поверх docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# (или один раз прописать COMPOSE_FILE в .env — см. .env.example).
+# На App Platform этот файл не используется: bind mounts там запрещены, а
+# наружу публикуется только nginx.
+
+services:
+  nginx:
+    ports:
+      # HTTPS с самоподписанным сертификатом (или своим из nginx/certs/)
+      - "${HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./nginx/certs:/etc/nginx/certs
+
+  backend:
+    # Локально — все настройки из .env (лимиты, кэш, AI и т.д.), не только
+    # перечисленные в базовом манифесте.
+    env_file:
+      - .env
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_URL: ${APP_URL:-http://localhost:8000}
+    ports:
+      # Прямой доступ: vite-прокси frontend и scripts/dev_check.py ходят на :8000
+      - "8000:8000"
+    volumes:
+      # Код монтируется, чтобы работал reload и миграции писались на хост
+      - ./backend:/app
+    command: >
+      sh -c "aerich upgrade &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  postgres:
+    ports:
+      # pytest и клиенты БД с машины разработчика
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  redis:
+    ports:
+      - "${REDIS_PORT:-6379}:6379"

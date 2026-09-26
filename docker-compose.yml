@@ -1,4 +1,72 @@
+# Базовый манифест — он же production (Timeweb Cloud App Platform).
+#
+# Ограничения App Platform (https://timeweb.cloud/docs/apps/deploying-with-docker-compose):
+# - через домен проксируется только ПЕРВЫЙ сервис манифеста — поэтому nginx первый;
+# - хост-порты 80 и 443 заняты платформой, TLS тоже терминирует она;
+# - bind mounts запрещены — только именованные тома;
+# - файла .env на сервере нет: переменные задаются в панели приложения и
+#   подставляются сюда через ${VAR}.
+#
+# Локальная разработка — вместе с docker-compose.dev.yml (код с reload,
+# порты backend/postgres/redis, HTTPS nginx), см. backend/README.md.
+
 services:
+  nginx:
+    build:
+      # Корень репозитория: образ собирает frontend (multi-stage, nginx/Dockerfile)
+      context: .
+      dockerfile: nginx/Dockerfile
+    container_name: max_hiring_nginx
+    restart: unless-stopped
+    ports:
+      # Любой порт, кроме 80/443; App Platform проксирует на него основной домен.
+      - "${HTTP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_started
+
+  backend:
+    build:
+      context: ./backend
+    container_name: max_hiring_backend
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+      STORAGE_ROOT: /app/storage
+      APP_ENV: ${APP_ENV:-production}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Пароль БД подставляется в URL как есть — без символов @ : / ? # %.
+      DATABASE_URL: postgres://${POSTGRES_USER:-max_hiring}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-max_hiring}
+      REDIS_URL: redis://redis:6379/0
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-}
+      MAX_BOT_USERNAME: ${MAX_BOT_USERNAME:-}
+      MAX_WEBHOOK_URL: ${MAX_WEBHOOK_URL:-}
+      BOT_ENABLED: ${BOT_ENABLED:-true}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      AI_API_URL: ${AI_API_URL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_PROVIDER_ORDER: ${AI_PROVIDER_ORDER:-gigachat,yandexgpt}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      YANDEX_API_KEY: ${YANDEX_API_KEY:-}
+      YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID:-}
+      YANDEX_SPEECHKIT_API_KEY: ${YANDEX_SPEECHKIT_API_KEY:-}
+    volumes:
+      # persistent volume для файлов (аватарки, резюме) — раздел 3 тех-доки
+      - storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Без условия на здоровье: кэш опционален (раздел 83) — backend должен
+      # запускаться и работать, даже если Redis ещё не поднялся или упал.
+      redis:
+        condition: service_started
+    command: >
+      sh -c "aerich upgrade &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
+
   postgres:
     image: postgres:16-alpine
     container_name: max_hiring_postgres
@@ -9,8 +77,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-max_hiring}
       TZ: UTC
       PGTZ: UTC
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,8 +89,6 @@ services:
     image: redis:7-alpine
     container_name: max_hiring_redis
     restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -32,53 +96,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
-  backend:
-    build:
-      context: ./backend
-    container_name: max_hiring_backend
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      TZ: UTC
-      STORAGE_ROOT: /app/storage
-    ports:
-      - "8000:8000"
-    volumes:
-      # dev-режим: код монтируется, чтобы работал reload и миграции писались на хост
-      - ./backend:/app
-      # persistent volume для файлов (аватарки, резюме) — раздел 3 тех-доки
-      - storage:/app/storage
-    depends_on:
-      postgres:
-        condition: service_healthy
-      # Без условия на здоровье: кэш опционален (раздел 83) — backend должен
-      # запускаться и работать, даже если Redis ещё не поднялся или упал.
-      redis:
-        condition: service_started
-    command: >
-      sh -c "aerich upgrade &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-
-  nginx:
-    build:
-      # Корень репозитория: образ собирает frontend (multi-stage, nginx/Dockerfile)
-      context: .
-      dockerfile: nginx/Dockerfile
-    container_name: max_hiring_nginx
-    restart: unless-stopped
-    ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
-    volumes:
-      # Настоящий сертификат — положить fullchain.pem/privkey.pem сюда на
-      # хосте (см. nginx/README.md). Пусто — контейнер сам сгенерирует
-      # самоподписанный при старте, поэтому не `:ro`.
-      - ./nginx/certs:/etc/nginx/certs
-    depends_on:
-      backend:
-        condition: service_started
 
 volumes:
   pgdata:
