@@ -499,6 +499,25 @@ Secure
 SameSite
 ```
 
+Транспорт сессии — cookie ИЛИ заголовок `Authorization: Bearer <session.id>`.
+
+`POST /auth/max` всегда устанавливает cookie (как выше) и дополнительно
+возвращает то же значение `session.id` в теле ответа (`AuthMaxResponse.session_token`).
+Backend принимает сессию из cookie, а если её нет — из заголовка `Authorization`.
+
+Причина: в native-обёртке MAX Mini App открывается как обычная страница, и
+cookie backend считается «своей». В web.max.ru тот же Mini App встроен во
+фрейм на странице MAX — cookie backend становится сторонней, и браузер её
+блокирует (вход через `/auth/max` проходит, но следующий запрос уже без
+сессии). Заголовок `Authorization` не подвержен блокировке сторонних cookie,
+поэтому frontend отправляет его на каждый запрос, когда токен получен из
+ответа `/auth/max` (см. `frontend/src/api/client.ts`, `setSessionToken`).
+
+Личность пользователя по-прежнему определяется только серверной сессией:
+`session.id` — единственный ключ, куда бы он ни пришёл (cookie или заголовок),
+и остаётся непрозрачным для frontend значением, а не источником истины,
+который frontend может подделать.
+
 Все защищённые endpoint'ы получают текущего пользователя из session.
 
 Frontend не передаёт `user_id`, `candidate_id` или `employer_id` как источник истины.

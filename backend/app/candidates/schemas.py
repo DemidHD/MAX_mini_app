@@ -16,10 +16,17 @@ from app.core.money import (
     Money,
     quantize_money,
 )
+from app.skills.schemas import SkillRead
+from app.skills.service import resolve_skill_names, skills_for_profile
 
 # Опыт хранится в INTEGER; 1200 месяцев — 100 лет, заведомо больше любой
 # осмысленной карьеры и при этом отсекает мусорные значения
 MAX_EXPERIENCE_MONTHS = 1200
+
+# Не из тех-доки — защита от случайно огромного списка, а не продуктовый
+# лимит: справочник на масштабе микробизнеса не предполагает сотен навыков
+# у одного кандидата.
+MAX_SKILLS = 30
 
 
 class CandidateProfileRead(BaseModel):
@@ -34,11 +41,15 @@ class CandidateProfileRead(BaseModel):
     schedule: str | None
     experience_months: int | None
     available_from: date | None
+    # Показываются работодателю в карточке кандидата — читаемые названия, а
+    # не «голые» id (см. `app.skills.service.resolve_skill_names`).
+    skills: list[SkillRead]
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_profile(cls, profile: CandidateProfile) -> "CandidateProfileRead":
+    async def from_profile(cls, profile: CandidateProfile) -> "CandidateProfileRead":
+        names = await resolve_skill_names(profile.skill_ids or [])
         return cls(
             user_id=profile.user_id,
             desired_role=profile.desired_role,
@@ -47,6 +58,7 @@ class CandidateProfileRead(BaseModel):
             schedule=profile.schedule,
             experience_months=profile.experience_months,
             available_from=profile.available_from,
+            skills=skills_for_profile(profile, names),
             created_at=profile.created_at,
             updated_at=profile.updated_at,
         )
@@ -73,6 +85,11 @@ class CandidateProfileUpdateRequest(BaseModel):
         default=None, ge=0, le=MAX_EXPERIENCE_MONTHS
     )
     available_from: date | None = None
+    # Id из справочника `skills`, не свободный текст (см. `app.skills`).
+    # Порядок сохраняется — это порядок, в котором кандидат оставил навыки
+    # на экране подтверждения. Существование каждого id в справочнике
+    # проверяется отдельно в сервисе — здесь нет доступа к БД.
+    skill_ids: list[int] | None = Field(default=None, max_length=MAX_SKILLS)
 
     @field_validator("salary")
     @classmethod
@@ -102,3 +119,19 @@ class CandidateProfileUpdateRequest(BaseModel):
         if value is None:
             return None
         return value.strip() or None
+
+    @field_validator("skill_ids")
+    @classmethod
+    def _normalize_skill_ids(cls, value: list[int] | None) -> list[int]:
+        """`null` — тоже осознанная очистка (снять все навыки), а не только
+        пустой список: колонка хранит `NULL`, но по смыслу это то же самое,
+        что и пустой массив (см. модель `CandidateProfile.skill_ids`).
+
+        Дедупликация — здесь, а не в БД: сохраняем порядок, в котором
+        кандидат оставил навыки (первым — то, что он поставил первым).
+        """
+        if value is None:
+            return []
+        if any(skill_id <= 0 for skill_id in value):
+            raise ValueError("id навыка должен быть положительным числом")
+        return list(dict.fromkeys(value))

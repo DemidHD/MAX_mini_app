@@ -17,8 +17,17 @@ from app.users.models import User
 
 
 async def require_auth(request: Request) -> User:
-    """Текущий пользователь или 401."""
+    """Текущий пользователь или 401.
+
+    Источник сессии — cookie ИЛИ заголовок `Authorization: Bearer …`.
+    Заголовок нужен web.max.ru: там Mini App открыт во фрейме на стороннем
+    домене, и браузер блокирует cookie как стороннюю (раздел 10 тех-доки).
+    """
     raw_session_id = request.cookies.get(settings.session_cookie_name)
+    if not raw_session_id:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            raw_session_id = auth_header.removeprefix("Bearer ").strip()
     if not raw_session_id:
         raise UnauthorizedError("Сессия не найдена")
 

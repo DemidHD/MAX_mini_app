@@ -75,6 +75,34 @@ async def test_login_sets_httponly_session_cookie(client: AsyncClient) -> None:
     assert session.expires_at > utcnow()
 
 
+async def test_login_response_body_carries_session_token(client: AsyncClient) -> None:
+    """Fallback для web.max.ru: cookie там сторонняя и блокируется браузером,
+    поэтому та же сессия дублируется в теле ответа для Authorization-заголовка."""
+    response = await client.post(
+        "/api/auth/max",
+        json={"init_data": build_init_data(user=max_user_payload(user_id=700015))},
+    )
+
+    cookie = response.cookies.get(settings.session_cookie_name)
+    body = response.json()
+    assert body["session_token"] == cookie
+
+
+async def test_authorization_header_authenticates_without_cookie(
+    client: AsyncClient,
+) -> None:
+    body = await _auth(client, 700016)
+    token = body["session_token"]
+
+    client.cookies.clear()
+    response = await client.get(
+        "/api/users/me", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["user_id"] == 700016
+
+
 async def test_invalid_init_data_is_rejected(client: AsyncClient) -> None:
     response = await client.post(
         "/api/auth/max", json={"init_data": build_init_data(corrupt_hash=True)}

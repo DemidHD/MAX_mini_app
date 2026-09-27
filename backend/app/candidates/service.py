@@ -21,6 +21,7 @@ from app.core.storage import (
     resolve_stored_file,
     save_resume,
 )
+from app.skills import service as skills_service
 from app.users.models import User
 
 logger = logging.getLogger("app.candidates")
@@ -52,6 +53,10 @@ async def save_profile(
     момент отбора.
     """
     changes = payload.model_dump(exclude_unset=True)
+    if "skill_ids" in changes:
+        changes["skill_ids"] = await skills_service.validate_skill_ids(
+            changes["skill_ids"]
+        )
 
     profile = await CandidateProfile.get_or_none(user_id=user.user_id)
     if profile is None:
@@ -194,7 +199,7 @@ async def parse_resume(user: User) -> ParseResumeResponse:
         return ParseResumeResponse(
             parsed=ResumeParsedDraft(), provider=None, ai_available=False
         )
-    return await ai_service.parse_resume(profile.resume_text)
+    return await _parse_resume_text(profile.resume_text)
 
 
 async def parse_resume_draft(content: bytes) -> ParseResumeResponse:
@@ -215,4 +220,22 @@ async def parse_resume_draft(content: bytes) -> ParseResumeResponse:
         return ParseResumeResponse(
             parsed=ResumeParsedDraft(), provider=None, ai_available=False
         )
-    return await ai_service.parse_resume(text)
+    return await _parse_resume_text(text)
+
+
+async def _parse_resume_text(text: str) -> ParseResumeResponse:
+    """Общая часть `parse_resume`/`parse_resume_draft`: ИИ-черновик полей +
+    найденные навыки (экран «Найденные навыки», C11 UX-карты).
+
+    Навыки ищутся отдельно от ИИ-разбора (`skills_service.suggest_skill_ids`)
+    и подмешиваются в черновик всегда, даже если ни один ИИ-провайдер не
+    ответил — это простое сопоставление с справочником, а не вызов ИИ
+    (раздел 57: недоступность ИИ не должна ломать сценарий).
+    """
+    response = await ai_service.parse_resume(text)
+    suggested = await skills_service.suggest_skill_ids(text)
+    if suggested:
+        response = response.model_copy(
+            update={"parsed": response.parsed.model_copy(update={"skill_ids": suggested})}
+        )
+    return response

@@ -31,6 +31,7 @@ async def auth_max(
         user=UserRead.from_user(user),
         current_step=current_step,
         application_id=application_id,
+        session_token=str(session.id),
     )
 
 

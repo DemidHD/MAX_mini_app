@@ -82,7 +82,13 @@ class ResumeParsedDraft(BaseModel):
     """Черновик профиля кандидата, извлечённый из резюме (экран C11
     UX-карты, функция 29). Поля соответствуют `CandidateProfileUpdateRequest`
     без валидации диапазонов — как и `ParsedVacancyDraft`, это подсказка,
-    сохраняется только через подтверждённый `PATCH /candidate/profile`."""
+    сохраняется только через подтверждённый `PATCH /candidate/profile`.
+
+    `skill_ids` — не из тех-доки: id навыков из справочника (`app.skills`),
+    найденных в тексте резюме («Найденные навыки»). Заполняется не ИИ-моделью,
+    а сопоставлением с справочником (`app.skills.service.suggest_skill_ids`,
+    вызывается из `app.candidates.service._parse_resume_text`), поэтому здесь
+    просто поле с пустым списком по умолчанию."""
 
     desired_role: str | None = None
     city: str | None = None
@@ -90,6 +96,7 @@ class ResumeParsedDraft(BaseModel):
     schedule: str | None = None
     experience_months: int | None = None
     available_from: str | None = None
+    skill_ids: list[int] = Field(default_factory=list)
 
 
 class ParseResumeResponse(BaseModel):

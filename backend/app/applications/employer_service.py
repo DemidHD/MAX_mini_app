@@ -47,6 +47,7 @@ from app.matching.rules import (
     months_from_criterion_value,
 )
 from app.notifications.service import notification_service
+from app.skills.service import resolve_skill_names, skills_for_profile
 from app.users.models import User
 from app.vacancies import service as vacancies_service
 from app.vacancies.models import ScreeningQuestion, Vacancy, VacancyCriterion
@@ -172,6 +173,11 @@ async def list_reserved_candidates(
             user_id__in=list(latest_by_candidate.keys())
         )
     }
+    skill_names = await resolve_skill_names(
+        skill_id
+        for profile in profiles.values()
+        for skill_id in profile.skill_ids or []
+    )
 
     scored: list[tuple[CandidateCard, Decimal]] = []
     for candidate_id, application in latest_by_candidate.items():
@@ -190,6 +196,7 @@ async def list_reserved_candidates(
                 outcomes,
                 weights=weights,
                 experience_required=experience_required,
+                skill_names=skill_names,
             )
         )
 
@@ -210,6 +217,7 @@ def _build_reserved_card(
     *,
     weights: dict[CriterionType, Decimal],
     experience_required: int | None,
+    skill_names: dict[int, str],
 ) -> tuple[CandidateCard, Decimal]:
     ranking = rank_criteria(outcomes, weights)
     explanation = build_explanation(
@@ -227,6 +235,7 @@ def _build_reserved_card(
         schedule=profile.schedule if profile else None,
         experience_months=profile.experience_months if profile else None,
         available_from=profile.available_from if profile else None,
+        skills=skills_for_profile(profile, skill_names),
         # Резервный кандидат пришёл с другой вакансии — её вопросы отбора к
         # этой не относятся, показывать их здесь нечем.
         screening_answers=[],
@@ -550,6 +559,11 @@ async def _build_cards(
         profile.user_id: profile
         for profile in await CandidateProfile.filter(user_id__in=candidate_ids)
     }
+    skill_names = await resolve_skill_names(
+        skill_id
+        for profile in profiles.values()
+        for skill_id in profile.skill_ids or []
+    )
     answers: dict[int, list[ScreeningAnswer]] = {}
     for answer in await ScreeningAnswer.filter(
         application_id__in=application_ids
@@ -564,6 +578,7 @@ async def _build_cards(
             questions,
             weights=weights,
             experience_required=experience_required,
+            skill_names=skill_names,
         )
         for application in applications
     ]
@@ -577,6 +592,7 @@ def _build_card(
     *,
     weights: dict[CriterionType, Decimal],
     experience_required: int | None,
+    skill_names: dict[int, str],
 ) -> tuple[CandidateCard, Decimal]:
     outcomes = _criteria_outcomes(application)
     ranking = rank_criteria(outcomes, weights)
@@ -596,6 +612,7 @@ def _build_card(
         schedule=profile.schedule if profile else None,
         experience_months=profile.experience_months if profile else None,
         available_from=profile.available_from if profile else None,
+        skills=skills_for_profile(profile, skill_names),
         screening_answers=[
             CardScreeningAnswer(
                 question_id=answer.question_id,

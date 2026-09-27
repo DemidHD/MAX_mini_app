@@ -27,6 +27,13 @@ class CandidateProfile(Model):
     resume_path = fields.CharField(max_length=500, null=True)
     resume_text = fields.TextField(null=True)
     resume_updated_at = fields.DatetimeField(null=True)
+    # Не из тех-доки — продуктовое решение. Хранит id из справочника
+    # `skills` (`app.skills`), а не свободный текст — иначе множились бы
+    # дубли вроде «Excel»/«MS Excel». `null=True`, а не пустой список по
+    # умолчанию: тот же приём, что и у остальных JSON-колонок в проекте
+    # (`VacancyCriterion.value` и т.п.) — приложение везде читает как
+    # `skill_ids or []`, а не полагается на DB DEFAULT.
+    skill_ids = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

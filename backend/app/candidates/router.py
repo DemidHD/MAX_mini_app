@@ -16,7 +16,7 @@ router = APIRouter(prefix="/candidate", tags=["candidate"])
 @router.get("/profile", response_model=CandidateProfileRead)
 async def get_profile(user: CandidateUser) -> CandidateProfileRead:
     """Профиль текущего кандидата. Если профиля ещё нет — 404."""
-    return CandidateProfileRead.from_profile(await service.get_profile(user))
+    return await CandidateProfileRead.from_profile(await service.get_profile(user))
 
 
 @router.patch("/profile", response_model=CandidateProfileRead)
@@ -24,7 +24,7 @@ async def update_profile(
     payload: CandidateProfileUpdateRequest, user: CandidateUser
 ) -> CandidateProfileRead:
     """Создаёт профиль при первом обращении, затем меняет переданные поля."""
-    return CandidateProfileRead.from_profile(await service.save_profile(user, payload))
+    return await CandidateProfileRead.from_profile(await service.save_profile(user, payload))
 
 
 @router.get("/resume", response_class=FileResponse)
@@ -44,7 +44,7 @@ async def set_resume(
         ensure_resume_size(file.size)
     content = await file.read(settings.resume_max_size_bytes + 1)
     profile = await service.set_resume(user, content)
-    return CandidateProfileRead.from_profile(profile)
+    return await CandidateProfileRead.from_profile(profile)
 
 
 @router.delete("/resume", status_code=status.HTTP_204_NO_CONTENT)

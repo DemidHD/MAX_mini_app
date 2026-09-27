@@ -136,6 +136,7 @@ async def test_resume_draft_empty_document_returns_empty_draft(
         "schedule": None,
         "experience_months": None,
         "available_from": None,
+        "skill_ids": [],
     }
 
 

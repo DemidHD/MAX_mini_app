@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { authMax } from '@/api/auth'
+import { setSessionToken } from '@/api/client'
 import { getInitData } from '@/bridge/maxBridge'
 import { AuthContext } from '@/auth/useAuth'
 import type { AuthState } from '@/auth/useAuth'
@@ -15,6 +16,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const initData = getInitData()
       const response = await authMax(initData)
+      // Cookie сторонняя во фрейме web.max.ru и браузер её блокирует —
+      // Authorization-заголовок дублирует ту же сессию (раздел 10 тех-доки).
+      setSessionToken(response.session_token)
       setState({
         status: 'authenticated',
         user: response.user,

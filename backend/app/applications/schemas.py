@@ -16,6 +16,7 @@ from app.core.enums import (
     ScreeningQuestionType,
 )
 from app.core.money import Money
+from app.skills.schemas import SkillRead
 from app.vacancies.schemas import VacancyRead
 
 # Раздел 18: в P0 у вакансии 3–4 вопроса, в P1 — до 6. Предел здесь выше
@@ -161,6 +162,9 @@ class CandidateCard(BaseModel):
     schedule: str | None
     experience_months: int | None
     available_from: date | None
+    # Не из тех-доки — продуктовое решение (см. `app.skills`). Не участвуют в
+    # hard-фильтрации: список только для просмотра работодателем.
+    skills: list[SkillRead]
     screening_answers: list[CardScreeningAnswer]
     hard_filters: list[CardCriterionResult]
     # Раздел 65: порядок карточек в списке уже отсортирован ранжированием,

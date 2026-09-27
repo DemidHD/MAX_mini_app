@@ -34,6 +34,12 @@ export interface AuthMaxResponse {
    * ещё не отдаёт поле — без него работодатель попадает на пустую форму.
    */
   vacancy_id?: number | null
+  /**
+   * Та же сессия, что уже установлена HTTP-only cookie — fallback для
+   * web.max.ru, где cookie сторонняя и блокируется браузером (раздел 10
+   * тех-доки). Используется как `Authorization: Bearer …` в `api/client.ts`.
+   */
+  session_token: string
 }
 
 export interface ProfileUpdateRequest {

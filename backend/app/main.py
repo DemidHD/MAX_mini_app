@@ -28,6 +28,7 @@ from app.core.logging import RequestContextMiddleware, setup_logging
 from app.interviews.router import router as matches_router
 from app.interviews.router import vacancies_router as slots_router
 from app.matching.router import router as feed_router
+from app.skills.router import router as skills_router
 from app.users.router import router as users_router
 from app.vacancies.router import employer_router as employer_vacancies_router
 from app.vacancies.router import router as vacancies_crud_router
@@ -107,6 +108,7 @@ api_router.include_router(employer_vacancies_router)
 api_router.include_router(matches_router)
 api_router.include_router(ai_router)
 api_router.include_router(analytics_router)
+api_router.include_router(skills_router)
 app.include_router(api_router)
 
 

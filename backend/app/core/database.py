@@ -18,6 +18,7 @@ MODELS_MODULES = [
     "app.interviews.models",
     "app.analytics.models",
     "app.notifications.models",
+    "app.skills.models",
     "aerich.models",
 ]
 

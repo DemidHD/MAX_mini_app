@@ -1,15 +1,29 @@
 /**
  * Тонкая обёртка над fetch для REST API backend (`/api/*`, раздел 27 тех-доки).
  *
- * Идентичность пользователя определяется только серверной session cookie
+ * Идентичность пользователя определяется только серверной сессией
  * (раздел 10) — client всегда шлёт credentials и никогда не добавляет
  * `user_id`/`candidate_id`/`employer_id` в запрос.
+ *
+ * Сессия передаётся cookie ИЛИ заголовком `Authorization: Bearer …`.
+ * Заголовок — fallback для web.max.ru: там Mini App открыт во фрейме на
+ * стороннем домене, и браузер блокирует cookie backend как стороннюю.
+ * Токен живёт только в памяти вкладки (см. `setSessionToken`) — на каждом
+ * монтировании `AuthProvider` заново вызывает `/auth/max`, поэтому
+ * персистентность через localStorage не нужна.
  */
 
 // В dev-режиме запросы проксируются Vite (см. vite.config.ts), поэтому базовый
 // путь по умолчанию относительный. В production можно переопределить через env,
 // если backend разместится на другом origin.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
+
+let sessionToken: string | null = null
+
+/** Сохраняет токен сессии из ответа `/auth/max` для заголовка Authorization. */
+export function setSessionToken(token: string | null): void {
+  sessionToken = token
+}
 
 export interface ApiErrorBody {
   code: string
@@ -56,6 +70,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (json !== undefined) {
     headers['Content-Type'] = 'application/json'
     requestBody = JSON.stringify(json)
+  }
+
+  if (sessionToken) {
+    headers['Authorization'] = `Bearer ${sessionToken}`
   }
 
   let response: Response

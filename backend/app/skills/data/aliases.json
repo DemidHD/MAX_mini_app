@@ -1,0 +1,266 @@
+[
+  {
+    "alias": "Касса",
+    "skill_code": "SK-02-001"
+  },
+  {
+    "alias": "POS",
+    "skill_code": "SK-02-001"
+  },
+  {
+    "alias": "ТСД",
+    "skill_code": "SK-02-025"
+  },
+  {
+    "alias": "Рохля",
+    "skill_code": "SK-07-043"
+  },
+  {
+    "alias": "Электророхля",
+    "skill_code": "SK-07-044"
+  },
+  {
+    "alias": "Айко",
+    "skill_code": "SK-05-037"
+  },
+  {
+    "alias": "iiko",
+    "skill_code": "SK-05-037"
+  },
+  {
+    "alias": "Rkeeper",
+    "skill_code": "SK-05-038"
+  },
+  {
+    "alias": "Ркипер",
+    "skill_code": "SK-05-038"
+  },
+  {
+    "alias": "Латте арт",
+    "skill_code": "SK-03-010"
+  },
+  {
+    "alias": "Холодные звонки",
+    "skill_code": "SK-01-016"
+  },
+  {
+    "alias": "Холодный обзвон",
+    "skill_code": "SK-01-016"
+  },
+  {
+    "alias": "CRM",
+    "skill_code": "SK-01-019"
+  },
+  {
+    "alias": "Битрикс",
+    "skill_code": "SK-32-045"
+  },
+  {
+    "alias": "Амо",
+    "skill_code": "SK-32-046"
+  },
+  {
+    "alias": "Эксель",
+    "skill_code": "SK-32-009"
+  },
+  {
+    "alias": "Excel",
+    "skill_code": "SK-32-009"
+  },
+  {
+    "alias": "Гугл таблицы",
+    "skill_code": "SK-32-012"
+  },
+  {
+    "alias": "Ворд",
+    "skill_code": "SK-32-008"
+  },
+  {
+    "alias": "Пауэрпоинт",
+    "skill_code": "SK-32-010"
+  },
+  {
+    "alias": "Фигма",
+    "skill_code": "SK-20-025"
+  },
+  {
+    "alias": "Фотошоп",
+    "skill_code": "SK-20-022"
+  },
+  {
+    "alias": "Иллюстратор",
+    "skill_code": "SK-20-023"
+  },
+  {
+    "alias": "Премьер",
+    "skill_code": "SK-20-048"
+  },
+  {
+    "alias": "1С Бухгалтерия",
+    "skill_code": "SK-17-051"
+  },
+  {
+    "alias": "1С ЗУП",
+    "skill_code": "SK-17-052"
+  },
+  {
+    "alias": "Диадок",
+    "skill_code": "SK-16-039"
+  },
+  {
+    "alias": "СБИС",
+    "skill_code": "SK-16-040"
+  },
+  {
+    "alias": "Вайлдберриз",
+    "skill_code": "SK-35-009"
+  },
+  {
+    "alias": "ВБ",
+    "skill_code": "SK-35-009"
+  },
+  {
+    "alias": "Озон",
+    "skill_code": "SK-35-010"
+  },
+  {
+    "alias": "ЯМаркет",
+    "skill_code": "SK-35-011"
+  },
+  {
+    "alias": "Погрузчик",
+    "skill_code": "SK-07-046"
+  },
+  {
+    "alias": "Ричтрак",
+    "skill_code": "SK-07-047"
+  },
+  {
+    "alias": "Штабелер",
+    "skill_code": "SK-07-045"
+  },
+  {
+    "alias": "Сварка полуавтомат",
+    "skill_code": "SK-09-042"
+  },
+  {
+    "alias": "Аргон",
+    "skill_code": "SK-09-043"
+  },
+  {
+    "alias": "ММА сварка",
+    "skill_code": "SK-09-041"
+  },
+  {
+    "alias": "Автокад",
+    "skill_code": "SK-37-003"
+  },
+  {
+    "alias": "Солидворкс",
+    "skill_code": "SK-37-005"
+  },
+  {
+    "alias": "Питон",
+    "skill_code": "SK-21-105"
+  },
+  {
+    "alias": "JS",
+    "skill_code": "SK-21-106"
+  },
+  {
+    "alias": "TS",
+    "skill_code": "SK-21-107"
+  },
+  {
+    "alias": "Реакт",
+    "skill_code": "SK-21-124"
+  },
+  {
+    "alias": "Некст",
+    "skill_code": "SK-21-125"
+  },
+  {
+    "alias": "Докер",
+    "skill_code": "SK-21-030"
+  },
+  {
+    "alias": "Кубер",
+    "skill_code": "SK-21-032"
+  },
+  {
+    "alias": "Постгрес",
+    "skill_code": "SK-21-039"
+  },
+  {
+    "alias": "Монга",
+    "skill_code": "SK-21-043"
+  },
+  {
+    "alias": "Редис",
+    "skill_code": "SK-21-044"
+  },
+  {
+    "alias": "Кафка",
+    "skill_code": "SK-21-047"
+  },
+  {
+    "alias": "Пауэр Би",
+    "skill_code": "SK-22-034"
+  },
+  {
+    "alias": "ДатаЛенс",
+    "skill_code": "SK-22-036"
+  },
+  {
+    "alias": "Табло",
+    "skill_code": "SK-22-035"
+  },
+  {
+    "alias": "SQL",
+    "skill_code": "SK-21-119"
+  },
+  {
+    "alias": "Пандас",
+    "skill_code": "SK-22-028"
+  },
+  {
+    "alias": "Скрайм",
+    "skill_code": "SK-24-044"
+  },
+  {
+    "alias": "Канбан",
+    "skill_code": "SK-24-045"
+  },
+  {
+    "alias": "CustDev",
+    "skill_code": "SK-24-002"
+  },
+  {
+    "alias": "Кастдев",
+    "skill_code": "SK-24-002"
+  },
+  {
+    "alias": "Юнит экономика",
+    "skill_code": "SK-22-021"
+  },
+  {
+    "alias": "НПС",
+    "skill_code": "SK-01-035"
+  },
+  {
+    "alias": "Роми",
+    "skill_code": "SK-19-065"
+  },
+  {
+    "alias": "Роас",
+    "skill_code": "SK-19-066"
+  },
+  {
+    "alias": "САС",
+    "skill_code": "SK-19-063"
+  },
+  {
+    "alias": "ЛТВ",
+    "skill_code": "SK-19-064"
+  }
+]
