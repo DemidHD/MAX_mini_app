@@ -122,7 +122,7 @@
 }
 
 .resumeImport__pick:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(var(--press-scale));
 }
 
 .resumeImport__pick:disabled {

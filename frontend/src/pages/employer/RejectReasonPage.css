@@ -45,7 +45,7 @@
 }
 
 .rejectReason__tile:active {
-  transform: scale(0.98);
+  transform: scale(var(--press-scale));
 }
 
 .rejectReason__tile--selected {

@@ -5,6 +5,7 @@ import '@maxhub/max-ui/dist/styles.css'
 import '@/index.css'
 import '@/styles/screen.css'
 import '@/styles/p1.css'
+import '@/styles/motion.css'
 import { App } from '@/App'
 
 createRoot(document.getElementById('root')!).render(

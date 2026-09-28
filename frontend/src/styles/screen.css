@@ -119,7 +119,7 @@
 }
 
 .screenButton:active:not(:disabled) {
-  transform: scale(0.99);
+  transform: scale(var(--press-scale));
 }
 
 .screenButton:disabled {

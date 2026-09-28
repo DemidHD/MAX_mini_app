@@ -357,7 +357,7 @@
 
 .calibration__no:active:not(:disabled),
 .calibration__yes:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(var(--press-scale));
 }
 
 .calibration__no:disabled,

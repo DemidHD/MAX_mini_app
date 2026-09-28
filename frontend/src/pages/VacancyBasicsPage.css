@@ -214,7 +214,7 @@
 }
 
 .vacancyBasics__next:active:not(:disabled) {
-  transform: scale(0.99);
+  transform: scale(var(--press-scale));
 }
 
 .vacancyField--area {

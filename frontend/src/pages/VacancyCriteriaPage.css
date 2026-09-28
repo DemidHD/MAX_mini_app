@@ -158,7 +158,7 @@
 }
 
 .vacancyCriteria__next:active {
-  transform: scale(0.99);
+  transform: scale(var(--press-scale));
 }
 
 .vacancyCriteria__error {

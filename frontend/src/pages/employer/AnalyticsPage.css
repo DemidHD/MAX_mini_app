@@ -230,7 +230,7 @@
 }
 
 .analytics__stage:active {
-  transform: scale(0.99);
+  transform: scale(var(--press-scale));
   filter: brightness(0.97);
 }
 

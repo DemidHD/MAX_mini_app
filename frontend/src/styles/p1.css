@@ -107,7 +107,7 @@
 }
 
 .p1Button:active:not(:disabled) {
-  transform: scale(0.99);
+  transform: scale(var(--press-scale));
 }
 
 .p1Button:disabled {

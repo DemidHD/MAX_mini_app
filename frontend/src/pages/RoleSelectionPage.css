@@ -89,11 +89,11 @@
 }
 
 .roleCard:active:not(:disabled).roleCard--employer {
-  transform: rotate(-2.4deg) scale(0.98);
+  transform: rotate(-2.4deg) scale(var(--press-scale));
 }
 
 .roleCard:active:not(:disabled).roleCard--candidate {
-  transform: rotate(2.6deg) scale(0.98);
+  transform: rotate(2.6deg) scale(var(--press-scale));
 }
 
 .roleCard[data-busy='true'] {
