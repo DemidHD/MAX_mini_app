@@ -194,6 +194,22 @@ async def get_session_user(raw_session_id: str) -> User | None:
     return session.user
 
 
+async def logout(raw_session_id: str) -> None:
+    """Отзывает сессию: удаляет её из БД и из кэша `session_id -> user_id`.
+
+    Идемпотентна — отсутствующий или уже просроченный `raw_session_id`
+    не считается ошибкой, транспорт (`router.py`) в любом случае отвечает 204
+    и сбрасывает cookie.
+    """
+    try:
+        session_id = UUID(raw_session_id)
+    except ValueError:
+        return
+
+    await cache.delete(f"{_SESSION_CACHE_PREFIX}{session_id}")
+    await Session.filter(id=session_id).delete()
+
+
 async def compute_current_step(user: User) -> tuple[str, int | None]:
     """Шаг сценария, на который нужно вернуть пользователя (раздел 7).
 

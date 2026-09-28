@@ -216,6 +216,44 @@ async def test_expired_session_is_not_accepted(client: AsyncClient) -> None:
     assert await Session.filter(id=session.id).exists() is False
 
 
+async def test_logout_revokes_session_and_clears_cookie(client: AsyncClient) -> None:
+    body = await _auth(client, 700017)
+    cookie = client.cookies.get(settings.session_cookie_name)
+    assert cookie is not None
+
+    response = await client.post("/api/auth/logout")
+
+    assert response.status_code == 204
+    assert await Session.filter(id=cookie).exists() is False
+    assert client.cookies.get(settings.session_cookie_name) is None
+
+    # Сессия отозвана — повторные запросы больше не аутентифицированы
+    me_response = await client.get("/api/users/me")
+    assert me_response.status_code == 401
+    assert body["user"]["user_id"] == 700017
+
+
+async def test_logout_via_authorization_header_revokes_session(
+    client: AsyncClient,
+) -> None:
+    body = await _auth(client, 700018)
+    token = body["session_token"]
+    client.cookies.clear()
+
+    response = await client.post(
+        "/api/auth/logout", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 204
+    assert await Session.filter(id=token).exists() is False
+
+
+async def test_logout_without_session_is_unauthorized(client: AsyncClient) -> None:
+    response = await client.post("/api/auth/logout")
+
+    assert response.status_code == 401
+
+
 async def test_periodic_cleanup_removes_only_expired_sessions() -> None:
     user = await User.create(user_id=700014, first_name="Очистка")
     expired = await Session.create(

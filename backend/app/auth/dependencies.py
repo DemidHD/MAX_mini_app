@@ -16,10 +16,9 @@ from app.core.logging import bind_user_id
 from app.users.models import User
 
 
-async def require_auth(request: Request) -> User:
-    """Текущий пользователь или 401.
+def get_raw_session_id(request: Request) -> str | None:
+    """Id сессии из cookie ИЛИ заголовка `Authorization: Bearer …`.
 
-    Источник сессии — cookie ИЛИ заголовок `Authorization: Bearer …`.
     Заголовок нужен web.max.ru: там Mini App открыт во фрейме на стороннем
     домене, и браузер блокирует cookie как стороннюю (раздел 10 тех-доки).
     """
@@ -28,6 +27,12 @@ async def require_auth(request: Request) -> User:
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             raw_session_id = auth_header.removeprefix("Bearer ").strip()
+    return raw_session_id or None
+
+
+async def require_auth(request: Request) -> User:
+    """Текущий пользователь или 401."""
+    raw_session_id = get_raw_session_id(request)
     if not raw_session_id:
         raise UnauthorizedError("Сессия не найдена")
 

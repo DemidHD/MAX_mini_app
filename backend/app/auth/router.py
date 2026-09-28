@@ -1,8 +1,9 @@
 """HTTP-транспорт авторизации. Бизнес-логика живёт в service.py (раздел 74)."""
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Request, Response, status
 
 from app.auth import service
+from app.auth.dependencies import CurrentUser, get_raw_session_id
 from app.auth.models import Session
 from app.auth.schemas import AuthMaxRequest, AuthMaxResponse
 from app.core.config import settings
@@ -32,6 +33,28 @@ async def auth_max(
         current_step=current_step,
         application_id=application_id,
         session_token=str(session.id),
+    )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    user: CurrentUser, request: Request, response: Response
+) -> None:
+    """Отзывает текущую сессию (раздел 10) и сбрасывает cookie.
+
+    Как и остальные защищённые эндпоинты, требует действующую сессию —
+    без неё `CurrentUser` уже вернёт 401 (раздел 10 тех-доки, cookie ИЛИ
+    заголовок `Authorization: Bearer …`).
+    """
+    del user
+    raw_session_id = get_raw_session_id(request)
+    if raw_session_id:
+        await service.logout(raw_session_id)
+    response.delete_cookie(
+        key=settings.session_cookie_name,
+        path="/",
+        secure=settings.is_production,
+        samesite="none" if settings.is_production else "lax",
     )
 
 
