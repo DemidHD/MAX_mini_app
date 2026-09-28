@@ -1,0 +1,90 @@
+/*
+ * Общие анимации взаимодействия: плавный вход экрана при переходе между
+ * страницами и тактильный отклик кнопок при нажатии — единая точка
+ * настройки вместо разбросанных по экранам чисел.
+ */
+
+:root {
+  /* Насколько «проседает» кнопка при нажатии — заметно, но чуть-чуть. */
+  --press-scale: 0.96;
+}
+
+/*
+ * Вход экрана. React Router размонтирует старый лист маршрута и монтирует
+ * новый при смене страницы, поэтому анимация на классе экрана проигрывается
+ * сама при вставке узла в DOM — без key-обёрток вокруг <Outlet />, которые
+ * рисковали бы на каждой смене вкладки перемонтировать целиком постоянные
+ * каркасы (CandidateLayout/EmployerLayout с нижним меню).
+ *
+ * Только opacity, без translateY: у .screen/.p1Screen min-height 100vh/
+ * 100dvh, и сдвиг такого блока по Y временно требовал на 12px больше места,
+ * чем окно, — доля секунды с вертикальным скроллбаром на входе каждой
+ * страницы ощущалась как дёрганье. Opacity к тому же не создаёт containing
+ * block для position:fixed (в отличие от transform) — шторки внутри .screen
+ * без портала (ProfileFieldSheet, ConfirmDialog) остаются привязаны к
+ * viewport на протяжении всей анимации, а не только после неё.
+ */
+@keyframes screenEnter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.screen,
+.p1Screen,
+.employerHome,
+.roleScreen,
+.vacancyBasics,
+.vacancyCriteria,
+.vacancyPreview,
+.vacancyPublished {
+  animation: screenEnter 0.32s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/*
+ * Базовый тактильный отклик — фон для кнопок и вкладок нижнего меню, у
+ * которых нет своего :active (иконки-кнопки, пункты меню, кнопки шторок).
+ * Обёрнут в :where(), поэтому специфичность равна нулю и не перебивает
+ * экранные правила вроде .screenButton/.p1Button — они переопределяют этот
+ * transform тем же --press-scale собственным, более специфичным селектором.
+ */
+:where(button:not(:disabled)),
+:where(.candidateNav__item),
+:where(.employerNav__item) {
+  transition: transform 0.12s ease;
+}
+
+:where(button:active:not(:disabled)),
+:where(.candidateNav__item:active),
+:where(.employerNav__item:active) {
+  transform: scale(var(--press-scale));
+}
+
+/* Полноэкранные невидимые кнопки-подложки шторок: проседание на них —
+   видимый зазор у края экрана, а не тактильный отклик. */
+.confirmDialog__backdrop:active,
+.fieldSheet__backdrop:active {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen,
+  .p1Screen,
+  .employerHome,
+  .roleScreen,
+  .vacancyBasics,
+  .vacancyCriteria,
+  .vacancyPreview,
+  .vacancyPublished {
+    animation: none;
+  }
+
+  :where(button:active:not(:disabled)),
+  :where(.candidateNav__item:active),
+  :where(.employerNav__item:active) {
+    transform: none;
+  }
+}
