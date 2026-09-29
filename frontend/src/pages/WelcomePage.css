@@ -1,0 +1,146 @@
+.welcome {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  /* Экран брендированный (фиксированные цвета из макета), а не подстраивается
+     под системную тему — как и экран выбора роли. */
+  background: #eef1f8;
+}
+
+/* Макет нарисован на ширине 591 px; все размеры внутри — в процентах ширины
+   блока (cqw), чтобы композиция масштабировалась вместе с экраном. */
+.welcome__hero {
+  position: relative;
+  container-type: inline-size;
+  width: 100%;
+  aspect-ratio: 591 / 819;
+  flex: none;
+  overflow: hidden;
+  background: #0066ff;
+  border-radius: 0 0 11cqw 11cqw;
+}
+
+.welcome__photo {
+  position: absolute;
+  width: 50.1cqw;
+  height: 50.1cqw;
+  box-sizing: border-box;
+  border: 1.4cqw solid #fff;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 2cqw 6cqw rgba(0, 20, 90, 0.35);
+}
+
+.welcome__photo--man {
+  left: 11.3cqw;
+  top: 36.5cqw;
+}
+
+.welcome__photo--woman {
+  left: 41.1cqw;
+  top: 58cqw;
+}
+
+.welcome__tag,
+.welcome__match {
+  position: absolute;
+  padding: 1.6cqw 4.6cqw 2cqw;
+  border-radius: 999px;
+  font-size: 4.2cqw;
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: nowrap;
+  color: #fff;
+}
+
+.welcome__tag {
+  border: 0.3cqw solid rgba(255, 255, 255, 0.6);
+}
+
+.welcome__tag--programmer {
+  left: 5.1cqw;
+  top: 23.2cqw;
+  transform: rotate(-8deg);
+}
+
+.welcome__tag--economist {
+  left: 63.1cqw;
+  top: 30.5cqw;
+  transform: rotate(6deg);
+}
+
+.welcome__tag--designer {
+  left: 3cqw;
+  top: 91.5cqw;
+  transform: rotate(-8deg);
+}
+
+.welcome__tag--manager {
+  left: 67.2cqw;
+  top: 114.5cqw;
+  transform: rotate(6deg);
+}
+
+.welcome__tag--barista {
+  left: 4.6cqw;
+  top: 120.1cqw;
+  transform: rotate(5deg);
+}
+
+.welcome__match {
+  left: 32.7cqw;
+  top: 105.7cqw;
+  padding: 2.4cqw 5.4cqw 2.8cqw;
+  font-size: 5.6cqw;
+  background: #0b0f2e;
+  transform: rotate(-8deg);
+  box-shadow: 0 2cqw 5cqw rgba(0, 20, 90, 0.35);
+}
+
+.welcome__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px 24px 32px;
+}
+
+.welcome .welcome__title {
+  margin: 0 0 12px;
+  font-size: clamp(24px, 7.4vw, 34px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: #0b0f2e;
+}
+
+.welcome__brand {
+  color: #0066ff;
+}
+
+.welcome__subtitle {
+  color: #6b7280;
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.welcome__cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 56px;
+  border-radius: 999px;
+  background: #0066ff;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.welcome__cta:active {
+  transform: scale(0.98);
+  opacity: 0.9;
+}

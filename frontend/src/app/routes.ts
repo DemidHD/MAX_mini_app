@@ -8,6 +8,8 @@ type Id = number | string
  */
 export const routes = {
   root: '/',
+  /** Приветствие: первый экран для нового пользователя, до выбора роли. */
+  welcome: '/welcome',
   roleSelection: '/role',
   profile: '/profile',
   authError: '/error',

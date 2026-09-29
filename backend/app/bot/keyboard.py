@@ -20,7 +20,7 @@ logger = logging.getLogger("app.bot")
 
 # Раздел UX-карты, макет B01: карточка уведомления с кнопкой «Открыть детали».
 _ENTITY_BUTTON_TEXT = "Открыть детали"
-_ROOT_BUTTON_TEXT = "Открыть приложение"
+_ROOT_BUTTON_TEXT = "Открыть МЭТЧ"
 
 
 def open_app_attachment(path: str | None) -> "list[Attachment] | None":

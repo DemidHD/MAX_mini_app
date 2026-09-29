@@ -18,6 +18,7 @@ import { VacancyPreviewPage } from '@/pages/VacancyPreviewPage'
 import { VacancyPublicPage } from '@/pages/VacancyPublicPage'
 import { VacancyPublishedPage } from '@/pages/VacancyPublishedPage'
 import { VacancyVoicePage } from '@/pages/VacancyVoicePage'
+import { WelcomePage } from '@/pages/WelcomePage'
 import { ApplicationStatusPage } from '@/pages/candidate/ApplicationStatusPage'
 import { CandidateProfilePage } from '@/pages/candidate/CandidateProfilePage'
 import { InterviewScheduledPage } from '@/pages/candidate/InterviewScheduledPage'
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { path: routes.root, element: <RootRedirect /> },
+      { path: routes.welcome, element: <WelcomePage /> },
       { path: routes.roleSelection, element: <RoleSelectionPage /> },
       { path: routes.profile, element: <ProfilePage /> },
       { path: routes.authError, element: <ErrorRoutePage /> },

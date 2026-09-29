@@ -1,6 +1,6 @@
 import { Navigate } from 'react-router-dom'
 
-import { pathForStep } from '@/app/routes'
+import { pathForStep, routes } from '@/app/routes'
 import { useAuth } from '@/auth/useAuth'
 
 /**
@@ -12,5 +12,7 @@ import { useAuth } from '@/auth/useAuth'
 export function RootRedirect() {
   const { state } = useAuth()
   if (state.status !== 'authenticated') return null
+  // Новому пользователю (роль ещё не выбрана) сначала показываем приветствие.
+  if (state.currentStep === 'role_selection') return <Navigate to={routes.welcome} replace />
   return <Navigate to={pathForStep(state.currentStep, state.applicationId, state.vacancyId)} replace />
 }
