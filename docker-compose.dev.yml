@@ -15,10 +15,16 @@ services:
       - ./nginx/certs:/etc/nginx/certs
 
   backend:
+    build:
+      args:
+        # pytest и httpx для scripts/dev_check.py
+        WITH_DEV: "true"
     # Локально — все настройки из .env (лимиты, кэш, AI и т.д.), не только
-    # перечисленные в базовом манифесте.
+    # перечисленные в базовом манифесте. Без .env стек тоже стартует — на
+    # значениях по умолчанию.
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       APP_ENV: ${APP_ENV:-development}
       APP_URL: ${APP_URL:-http://localhost:8000}
@@ -30,6 +36,7 @@ services:
       - ./backend:/app
     command: >
       sh -c "aerich upgrade &&
+             python scripts/seed_skills.py &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   postgres:

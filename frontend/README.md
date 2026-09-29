@@ -1,6 +1,6 @@
 # MAX Найм — Frontend
 
-Mini App на React + TypeScript + [MAX UI](https://dev.max.ru/ui). Общие правила проекта — в [корневом CLAUDE.md](../CLAUDE.md), технический контракт с backend — в [docs/tech-spec-v2.2.md](../docs/tech-spec-v2.2.md).
+Mini App на React + TypeScript + [MAX UI](https://dev.max.ru/ui). Технический контракт с backend — в [docs/tech-spec-v2.2.md](../docs/tech-spec-v2.2.md).
 
 ## Запуск
 
