@@ -57,6 +57,8 @@ export function ProfileFieldSheet({
     if (field === 'desired_role') return profile.desired_role
     if (field === 'city') return profile.city ?? ''
     if (field === 'salary') return profile.salary ? String(Math.round(Number(profile.salary))) : ''
+    // Свой график (например, из резюме) — в поле, готовые варианты — кнопками.
+    if (field === 'schedule' && profile.schedule && !scheduleOptions.includes(profile.schedule)) return profile.schedule
     return ''
   })
 
@@ -65,6 +67,7 @@ export function ProfileFieldSheet({
     if (field === 'desired_role') onChange({ desired_role: value })
     if (field === 'city') onChange({ city: value || null })
     if (field === 'salary') onChange({ salary: value ? `${Number(value.replace(/\D/g, ''))}.00` : null })
+    if (field === 'schedule') onChange({ schedule: value || null })
     onClose()
   }
 
@@ -108,14 +111,38 @@ export function ProfileFieldSheet({
         ) : null}
 
         {field === 'schedule' ? (
-          <Options
-            options={scheduleOptions.map((value) => ({ key: value, label: value }))}
-            selected={profile.schedule}
-            onSelect={(key) => {
-              onChange({ schedule: key })
-              onClose()
-            }}
-          />
+          <>
+            <Options
+              options={scheduleOptions.map((value) => ({ key: value, label: value }))}
+              selected={profile.schedule}
+              onSelect={(key) => {
+                onChange({ schedule: key })
+                onClose()
+              }}
+            />
+            <form
+              className="fieldSheet__form fieldSheet__form--custom"
+              onSubmit={(event) => {
+                event.preventDefault()
+                commitText()
+              }}
+            >
+              <label className="fieldSheet__label" htmlFor="schedule-custom">
+                Или укажите свой
+              </label>
+              <input
+                id="schedule-custom"
+                className="fieldSheet__input"
+                value={text}
+                placeholder="Например, 3/3 или только выходные"
+                maxLength={100}
+                onChange={(event) => setText(event.target.value)}
+              />
+              <button type="submit" className="screenButton screenButton--primary" disabled={!text.trim()}>
+                Готово
+              </button>
+            </form>
+          </>
         ) : null}
 
         {field === 'experience_months' ? (

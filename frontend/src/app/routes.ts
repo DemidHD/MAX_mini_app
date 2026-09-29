@@ -2,10 +2,7 @@ import type { CurrentStep } from '@/api/types'
 
 type Id = number | string
 
-/**
- * Пути маршрутов Mini App. Экраны вне P0 (например, «Мои отклики» C12 — P2)
- * временно ведут на заглушку `StubPage`.
- */
+/** Пути маршрутов Mini App. */
 export const routes = {
   root: '/',
   /** Приветствие: первый экран для нового пользователя, до выбора роли. */

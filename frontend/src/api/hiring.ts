@@ -86,6 +86,20 @@ export interface ApplicationSummary {
   created_at: string
 }
 
+/** Элемент `GET /api/applications` — экран «Мои отклики» (C12). */
+export interface CandidateApplicationListItem {
+  id: number
+  vacancy_id: number
+  vacancy_title: string
+  company_name: string | null
+  image_url: string | null
+  status: ApplicationStatus
+  /** Начало собеседования; есть только при `interview_scheduled`. */
+  interview_starts_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface ScreeningQuestion {
   id: number
   question: string
@@ -256,6 +270,11 @@ export async function applyToVacancy(vacancyId: number, signal?: AbortSignal) {
   const application = await api.post<ApplicationSummary>(`/vacancies/${vacancyId}/apply${query}`, undefined, signal)
   if (ref) forgetReferral(vacancyId)
   return application
+}
+
+/** Отклики кандидата, свежие изменения сверху. */
+export function getMyApplications(signal?: AbortSignal) {
+  return api.get<{ items: CandidateApplicationListItem[] }>('/applications', signal)
 }
 
 export function getApplication(applicationId: number, signal?: AbortSignal) {

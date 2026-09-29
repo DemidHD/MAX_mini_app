@@ -1,0 +1,369 @@
+/*
+ * C12 «Мои отклики». Размеры сняты с макета (экран 390 pt): отступы, высоты
+ * плашек и кегли подобраны под него. Шрифт — Inter, как в макетах.
+ */
+
+.myApps {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top, 0px) + 6px) 0 16px;
+  background: #fbfcfe;
+  color: #000003;
+  font-family: 'Inter', -apple-system, system-ui, 'Helvetica Neue', Roboto, sans-serif;
+}
+
+.myApps__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px 0 20px;
+}
+
+.myApps__title {
+  margin: 0;
+  font-size: 43px;
+  font-weight: 800;
+  line-height: 44px;
+  letter-spacing: -0.035em;
+}
+
+.myApps__more {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #f0f3fb;
+  color: #000009;
+  cursor: pointer;
+}
+
+.myApps__tabs {
+  display: flex;
+  gap: 4.5px;
+  margin-top: 8px;
+  padding: 0 20px;
+}
+
+.myApps__tab {
+  min-width: 75px;
+  height: 35px;
+  padding: 0 23.5px;
+  border: none;
+  border-radius: 999px;
+  background: #f0f3fb;
+  color: #48496d;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.myApps__tab--active {
+  background: #006efd;
+  color: #fff;
+}
+
+/* ------------------------------------------------------------ пустой список */
+
+.myApps__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 20px;
+  text-align: center;
+}
+
+.myApps__art {
+  display: block;
+  width: 354px;
+  max-width: calc(100% + 20px);
+  height: auto;
+  margin-top: 29px;
+}
+
+.myApps__emptyTitle {
+  margin: 10.5px 0 0;
+  font-size: 31.4px;
+  font-weight: 800;
+  line-height: 35px;
+  letter-spacing: -0.035em;
+}
+
+.myApps__emptyText {
+  margin: 11.8px 0 0;
+  color: #4b5475;
+  font-size: 15.3px;
+  line-height: 22.8px;
+  letter-spacing: -0.01em;
+}
+
+.myApps__button {
+  width: 100%;
+  height: 55px;
+  margin-top: 27.4px;
+  border: none;
+  border-radius: 999px;
+  background: #006eff;
+  color: #fff;
+  font-family: inherit;
+  font-size: 16.1px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  box-shadow: 0 10px 24px rgba(0, 110, 255, 0.22);
+  cursor: pointer;
+}
+
+.myApps__button:active {
+  transform: scale(var(--press-scale, 0.98));
+}
+
+.myApps__hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin-top: 21.8px;
+  color: #7a7c99;
+  font-size: 10.9px;
+  line-height: 14.2px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.myApps__hint svg {
+  flex-shrink: 0;
+  color: #8a8ba6;
+}
+
+.myApps__none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 40px;
+  padding: 0 20px;
+  text-align: center;
+}
+
+.myApps__link {
+  margin-top: 8px;
+  padding: 10px;
+  border: none;
+  background: none;
+  color: #006efd;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------ карточки */
+
+.myApps__list {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  margin: 14px 0 0;
+  padding: 0 15px;
+  list-style: none;
+}
+
+.appCard {
+  display: flex;
+  gap: 10px;
+  padding: 8px 8px 4.5px;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 4px 22px rgba(20, 30, 60, 0.06);
+}
+
+.appCard__photo {
+  flex-shrink: 0;
+  width: 122px;
+  height: 169px;
+  border-radius: 12px;
+}
+
+.appCard__body {
+  min-height: 174px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.appCard__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7.3px 0 0 4px;
+}
+
+.appCard__title {
+  min-width: 0;
+  margin: 0;
+  font-size: 19.5px;
+  font-weight: 800;
+  line-height: 24px;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+
+.appCard__more {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 24px;
+  margin: -2.3px 1.7px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #000009;
+  cursor: pointer;
+}
+
+.appCard__company {
+  margin-top: 4px;
+  padding-left: 4px;
+  color: #7c7f97;
+  font-size: 14px;
+  line-height: 18px;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appCard__status,
+.appCard__details {
+  display: flex;
+  align-items: center;
+  border-radius: 16px;
+  color: #000003;
+  text-decoration: none;
+}
+
+.appCard__status {
+  gap: 11px;
+  height: 57px;
+  margin-top: auto;
+  padding: 0 12px 0 8.5px;
+}
+
+.appCard__chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.appCard__statusIcon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+.appCard__statusText {
+  position: relative;
+  top: 1.75px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.appCard__statusTitle {
+  font-size: 13.3px;
+  font-weight: 700;
+  line-height: 17px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.appCard__statusCaption {
+  margin-top: 5.5px;
+  color: #62656d;
+  font-size: 11.3px;
+  line-height: 14px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.appCard__status--blue {
+  background: #e8f1fe;
+}
+
+.appCard__status--blue .appCard__statusIcon {
+  background: #0171fd;
+  color: #fff;
+}
+
+.appCard__status--blue .appCard__statusTitle,
+.appCard__status--blue .appCard__chevron {
+  color: #0171fd;
+}
+
+.appCard__status--blue .appCard__statusCaption {
+  color: #1b2134;
+}
+
+.appCard__status--yellow {
+  background: #fff5e1;
+}
+
+.appCard__status--yellow .appCard__statusIcon {
+  background: #fcd585;
+  color: #000003;
+}
+
+.appCard__status--gray {
+  background: #eff3f8;
+}
+
+.appCard__status--gray .appCard__statusIcon {
+  background: #dadfe8;
+  color: #000003;
+}
+
+.appCard__status--red {
+  background: #fff1f0;
+}
+
+.appCard__status--red .appCard__statusIcon {
+  background: #ffd9d5;
+  color: #c4291c;
+}
+
+.appCard__status--green {
+  background: #e9f8ef;
+}
+
+.appCard__status--green .appCard__statusIcon {
+  background: #34c759;
+  color: #fff;
+}
+
+.appCard__details {
+  height: 46px;
+  margin-top: 8.5px;
+  padding: 0 12px 2px 16px;
+  background: #f1f5fb;
+  font-size: 11.6px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}

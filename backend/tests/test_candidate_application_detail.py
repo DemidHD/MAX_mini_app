@@ -280,3 +280,13 @@ async def test_application_detail_reflects_match_and_interview() -> None:
         assert scheduled.json()["status"] == ApplicationStatus.INTERVIEW_SCHEDULED.value
         assert scheduled.json()["match_id"] == match_id
         assert scheduled.json()["interview_id"] == interview.id
+
+        # 4. В списке «Мои отклики» — заведение, фото и время интервью
+        listed = await candidate_client.get("/api/applications")
+        assert listed.status_code == 200, listed.text
+        [item] = listed.json()["items"]
+        assert item["id"] == application_id
+        assert item["company_name"] == vacancy.company_name
+        assert item["image_url"] == vacancy.image_url
+        assert item["interview_starts_at"] is not None
+        assert datetime.fromisoformat(item["interview_starts_at"]) == slot.starts_at

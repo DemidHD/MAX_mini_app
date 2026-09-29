@@ -243,7 +243,12 @@ class CandidateApplicationListItem(BaseModel):
     id: int
     vacancy_id: int
     vacancy_title: str
+    # Для карточки списка: название заведения и фото вакансии, может не быть
+    company_name: str | None = None
+    image_url: str | None = None
     status: ApplicationStatus
+    # Начало назначенного собеседования; есть только при `interview_scheduled`
+    interview_starts_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

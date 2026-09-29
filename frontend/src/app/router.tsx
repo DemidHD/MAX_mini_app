@@ -9,7 +9,6 @@ import { NotFoundPage } from '@/pages/NotFoundPage'
 import { ProfilePage } from '@/pages/ProfilePage'
 import { RoleSelectionPage } from '@/pages/RoleSelectionPage'
 import { RootRedirect } from '@/pages/RootRedirect'
-import { StubPage } from '@/pages/StubPage'
 import { VacancyAiCheckPage } from '@/pages/VacancyAiCheckPage'
 import { VacancyAiTextPage } from '@/pages/VacancyAiTextPage'
 import { VacancyBasicsPage } from '@/pages/VacancyBasicsPage'
@@ -23,6 +22,7 @@ import { ApplicationStatusPage } from '@/pages/candidate/ApplicationStatusPage'
 import { CandidateProfilePage } from '@/pages/candidate/CandidateProfilePage'
 import { InterviewScheduledPage } from '@/pages/candidate/InterviewScheduledPage'
 import { MatchPage } from '@/pages/candidate/MatchPage'
+import { MyApplicationsPage } from '@/pages/candidate/MyApplicationsPage'
 import { ResumeImportPage } from '@/pages/candidate/ResumeImportPage'
 import { ScreeningPage } from '@/pages/candidate/ScreeningPage'
 import { ScreeningStartPage } from '@/pages/candidate/ScreeningStartPage'
@@ -63,7 +63,7 @@ export const router = createBrowserRouter([
         element: <CandidateLayout />,
         children: [
           { path: routes.candidateFeed, element: <VacancyFeedPage /> },
-          { path: routes.candidateApplications, element: <StubPage title="Мои отклики" /> },
+          { path: routes.candidateApplications, element: <MyApplicationsPage /> },
         ],
       },
       { path: routes.candidateVacancy(), element: <VacancyDetailsPage /> },

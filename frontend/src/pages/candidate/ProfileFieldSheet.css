@@ -64,6 +64,17 @@
   gap: 14px;
 }
 
+.fieldSheet__form--custom {
+  margin-top: 20px;
+}
+
+.fieldSheet__label {
+  margin-bottom: -6px;
+  color: var(--screen-muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
 .fieldSheet__input {
   width: 100%;
   height: 54px;

@@ -17,6 +17,7 @@ Hard filters складываются из двух источников (раз
 """
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from fastapi import BackgroundTasks
@@ -340,13 +341,30 @@ async def list_my_applications(user: User) -> CandidateApplicationListResponse:
         .order_by("-updated_at")
         .select_related("vacancy")
     )
+    scheduled_ids = [
+        application.id
+        for application in applications
+        if application.status == ApplicationStatus.INTERVIEW_SCHEDULED
+    ]
+    interview_starts: dict[int, datetime] = {}
+    if scheduled_ids:
+        interviews = await Interview.filter(
+            match__application_id__in=scheduled_ids
+        ).select_related("match", "slot")
+        interview_starts = {
+            interview.match.application_id: interview.slot.starts_at
+            for interview in interviews
+        }
     return CandidateApplicationListResponse(
         items=[
             CandidateApplicationListItem(
                 id=application.id,
                 vacancy_id=application.vacancy_id,
                 vacancy_title=application.vacancy.title,
+                company_name=application.vacancy.company_name,
+                image_url=application.vacancy.image_url,
                 status=application.status,
+                interview_starts_at=interview_starts.get(application.id),
                 created_at=application.created_at,
                 updated_at=application.updated_at,
             )
