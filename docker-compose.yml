@@ -56,6 +56,7 @@ services:
       YANDEX_API_KEY: ${YANDEX_API_KEY:-}
       YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID:-}
       YANDEX_SPEECHKIT_API_KEY: ${YANDEX_SPEECHKIT_API_KEY:-}
+      SEED_DEMO_VACANCIES: ${SEED_DEMO_VACANCIES:-0}
     volumes:
       # persistent volume для файлов (аватарки, резюме) — раздел 3 тех-доки
       - storage:/app/storage
@@ -69,6 +70,7 @@ services:
     command: >
       sh -c "aerich upgrade &&
              python scripts/seed_skills.py &&
+             { python scripts/seed_demo_vacancies.py --from-env || echo 'Демо-вакансии не созданы'; } &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
 
   postgres:
